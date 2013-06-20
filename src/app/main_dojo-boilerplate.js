@@ -39,8 +39,6 @@ define([ 'dojo/has', 'require' ], function (has, require) {
 		 * require just `dojo/domReady`, it would load that module just like any other module, without the special
 		 * plugin functionality.
 		 */
- 		 
- 		/* From Dojo-BoilerPlate
 		require([ './Dialog', 'dojo/domReady!' ], function (Dialog) {
 			app.dialog = new Dialog().placeAt(document.body);
 
@@ -51,22 +49,6 @@ define([ 'dojo/has', 'require' ], function (has, require) {
 			// And now we just show the dialog to demonstrate that, yes, the example app has loaded successfully.
 			app.dialog.show();
 		});
-       */
-       require([ "dojo/_base/window", "dojox/app/main", "dojo/sniff", "dojox/json/ref", "dojo/text!app/config.json",'./Dialog', 'dojo/domReady!' ], 
-       	function (win, Application, has, json, config, Dialog) {
-       		
-       		win.global.myApp = {};
-
-       		// populate has flag on whether html5 history is correctly supported or not
-		    has.add("html5history", !has("ie") || has("ie") > 9);
-		    
-		    myApp.MainConfig = json.fromJson(config);
-
-		    myApp.App = new Application(myApp.MainConfig);
-
-			
-		});
-      
 	}
 	else {
 		// TODO: Eventually, the Boilerplate will actually have a useful server implementation here :)

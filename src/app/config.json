@@ -1,0 +1,117 @@
+{
+    //Mandatory
+    "id": "App",  
+    //Optional  
+    "name": "Boilerplate-App",
+    //Optional
+    "description": "Sample Boilerplate-App to help devs get starteds",
+    //Optional, but very useful for views properties
+    "loaderConfig": {
+        "paths": {
+            "app": "../app"
+        }
+    },
+    /* 
+    //Optional, default is "dojox/css3/transit"
+    "transit": "dojox/css3/transit",
+    */
+    //Optional, but required when not using the parser, and its required by views
+    "dependencies": [
+    ],
+    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
+    "modules": [
+    ],
+    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller
+    "controllers": [
+        //listens to "app-init, app-load"
+        "dojox/app/controllers/Load",
+        //listens to "app-transition, app-domNode"
+        "dojox/app/controllers/Transition",
+        //listens to "app-initLayout,app-layoutVIew,app-resize"
+        "dojox/app/controllers/Layout"
+    ],
+    /*
+    //Optional, App levels stores shared with views
+    "stores": {
+        "store1":{
+            "type": "dojo/store/Memory",
+            "observable": true,
+            "params": { // parameters used to initialize the data store
+                "data": "modelApp.names"
+            }
+        },
+        "store2":{
+            "type": "dojo/store/JsonRest",
+            "params": {
+                "data": "modelApp.repeatData"
+            }
+        }
+    },
+    */
+    
+    //Optional
+    "template": "app/views/app.html",
+    
+    //Optional, other examples are "flip, none"
+    "defaultTransition": "slide",
+    //Mandatory, one or a set of views view1+view2+view3
+    "defaultView": "view1",
+    
+    //Optional, App level stings
+    "nls": "app/nls/app_strings",
+    //Mandatory, Specify Application child views
+    "views": {
+        "view1":{
+            //Mandatory for defaultViews
+            "template": "app/views/view1/view1.html",
+            
+            //Optional, listens to View.emit events
+            //  init
+            //  beforeActivate
+            //  afterActivate
+            //  beforeDeactivate
+            //  afterDeactivate
+            //  destroy
+            //"controller": "app/views/view1/view1_controller.js",
+            //Optional, overwrites the transition type only for this view
+            "transition": "fade",
+            //Optional, view level strings they get mixed into global nls object
+            "nls": "app/views/view1/nls/view1_strings.js",
+            //Optional, dependencies for this specific view, declare in template
+            "dependencies":[]
+            
+        },
+        "view2":{
+            //Mandatory for defaultViews
+            //"template": "app/views/list.html",
+            /*
+            //Optional, listens to View.emit events
+            //  init
+            //  beforeActivate
+            //  afterActivate
+            //  beforeDeactivate
+            //  afterDeactivate
+            //  destroy
+            "controller": "app/views/view1/view1_controller.js",
+            //Optional, overwrites the transition type only for this view
+            "transition": "slide",
+            //Optional, view level strings they get mixed into global nls object
+            "nls": "app/views/nls/view1/view1_strings.js",
+            //Optional, dependencies for this specific view, declare in template
+            "dependencies":["dojox/mobile/TextBox"]
+            */
+        }
+    },
+    "has": {
+        "html5history": {
+            "controllers": [
+                "dojox/app/controllers/History"
+            ]
+        },
+        "!html5history": {
+            "controllers": [
+                "dojox/app/controllers/HistoryHash"
+            ]
+        }
+    }
+}

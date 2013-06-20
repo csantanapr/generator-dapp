@@ -6,13 +6,5 @@
  * It is highly, highly recommended that you develop your CSS using Stylus: http://learnboost.github.com/stylus/.
  */
 
-/* Note: This section commented out as we are not building Dijit widgets; 
 @import '../../dojo/resources/dojo.css';
 @import '../../dijit/themes/claro/claro.css';
-*/
-@import '../../app/views/view1/resources/view1.css';
-
-.navPane {
-    width:300px;
-    background-color: rgb(80, 248, 174);  
-}
