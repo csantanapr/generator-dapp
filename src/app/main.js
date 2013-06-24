@@ -52,18 +52,13 @@ define([ 'dojo/has', 'require' ], function (has, require) {
 			app.dialog.show();
 		});
        */
-       require([ "dojo/_base/window", "dojox/app/main", "dojo/sniff", "dojox/json/ref", "dojo/text!app/config.json",'./Dialog', 'dojo/domReady!' ], 
-       	function (win, Application, has, json, config, Dialog) {
-       		
-       		win.global.myApp = {};
+       require([ "dojox/app/main", "dojo/sniff", "dojox/json/ref", "dojo/text!app/config.json", 'dojo/domReady!' ], 
+       	function (Application, has, json, config) {
 
        		// populate has flag on whether html5 history is correctly supported or not
-		    has.add("html5history", !has("ie") || has("ie") > 9);
-		    
-		    myApp.MainConfig = json.fromJson(config);
+		    has.add("html5history", !has("ie") || has("ie") > 9);		    
 
-		    myApp.App = new Application(myApp.MainConfig);
-
+		    Application(json.fromJson(config));
 			
 		});
       
