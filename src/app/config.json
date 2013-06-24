@@ -76,7 +76,7 @@
             //Optional, overwrites the transition type only for this view
             "transition": "fade",
             //Optional, view level strings they get mixed into global nls object
-            "nls": "app/views/view1/nls/view1_strings.js",
+            "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
             "dependencies":[]
             

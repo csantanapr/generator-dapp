@@ -59,4 +59,23 @@ perl -pe "
   s/<script src=\"$LOADERMID.*?\/script>//;  # Remove script app/run
   s/\s+/ /g;                                 # Collapse white-space" > "$DISTDIR/index.html"
 
+#Create Mini App for Mobile Development
+
+# Destination directory for built code
+MOBILE_DISTDIR="$BASEDIR/mobile/www"
+echo -n "Cleaning mobile Mobile Output"
+rm -rf "$MOBILE_DISTDIR"
+echo " Done"
+mkdir -p "$MOBILE_DISTDIR"
+cp -a "$DISTDIR/index.html" "$MOBILE_DISTDIR"
+cp -a "$DISTDIR/app" "$MOBILE_DISTDIR"
+#create dojo stuff
+mkdir -p "$MOBILE_DISTDIR/dojo"
+mkdir -p "$MOBILE_DISTDIR/dojox/app"
+#copy dojo stuff
+cp -a "$DISTDIR/dojo/dojo.js"  "$MOBILE_DISTDIR/dojo"
+cp -a "$DISTDIR/dojox/app/main.js" "$MOBILE_DISTDIR/dojox/app"
+
+
+
 echo "Build complete"
