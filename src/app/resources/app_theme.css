@@ -1,0 +1,4 @@
+/* This css file should only contain asthectic rules not layout or structure, they belong in *_layout.css */
+.navPane {
+    background-color: rgb(80, 248, 174);  
+}

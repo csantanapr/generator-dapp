@@ -80,26 +80,6 @@
             //Optional, dependencies for this specific view, declare in template
             "dependencies":[]
             
-        },
-        "view2":{
-            //Mandatory for defaultViews
-            //"template": "app/views/list.html",
-            /*
-            //Optional, listens to View.emit events
-            //  init
-            //  beforeActivate
-            //  afterActivate
-            //  beforeDeactivate
-            //  afterDeactivate
-            //  destroy
-            "controller": "app/views/view1/view1_controller.js",
-            //Optional, overwrites the transition type only for this view
-            "transition": "slide",
-            //Optional, view level strings they get mixed into global nls object
-            "nls": "app/views/nls/view1/view1_strings.js",
-            //Optional, dependencies for this specific view, declare in template
-            "dependencies":["dojox/mobile/TextBox"]
-            */
         }
     },
     "has": {
