@@ -2,10 +2,10 @@ Dojo App Boilerplate: A Starter Kit for Dojo Development using DojoX/App MVC Fra
 ====================================================
 
 - The Dojo App Boilerplate is a set of files to help you rapidly get up and running with the Dojo Toolkit and dojox/app mvc framework. 
-- It illustrates some basic best practices when working with Dojo based on the original work of [dojo-boilerplate](https://github.com/csantanapr/dojo-boilerplate).
+- It illustrates some basic best practices when working with Dojo based on the original work of [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate).
 - Helps you build dojo which is some time the most dificult of working with [dojotoolkit](dojotoolkit.org)
 - Builds an alternate small build to be embedded in a mobile App like [Apache Cordova/PhoneGap](cordova.io)
-- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for his original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project. 
+- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project. 
 
 
 Quick Start
@@ -55,7 +55,7 @@ A brief tour
 Useful resources
 ----------------
 
-* [Dojox/App Tutorial](http://dojotoolkit.org/documentation/tutorials/recipes/app_controller/)
+* [Dojox/App Tutorial](http://dojotoolkit.org/documentation/tutorials/1.9/dojox_app)
 * [Dojox/App Reference](http://dojotoolkit.org/reference-guide/dojox/app.html#dojox-app)
 * [Dojo Reference Guide](http://dojotoolkit.org/reference-guide/)
 * [Dojo API Browser](http://dojotoolkit.org/api/)
