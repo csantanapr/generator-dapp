@@ -17,6 +17,9 @@
     */
     //Optional, but required when not using the parser, and its required by views
     "dependencies": [
+        "dojox/app/controllers/History",
+        "dojox/app/controllers/HistoryHash"
+
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
     "modules": [

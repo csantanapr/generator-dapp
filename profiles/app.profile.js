@@ -72,11 +72,7 @@ var profile = {
 				'app/main', 
 				'app/run',
 				//Add App Framework
-				'dojox/app/main',
-				//Add any modules inside a has in the config.json
-				//This is a bug in dojo/app/build
-				'dojox/app/controllers/History',
-        		'dojox/app/controllers/HistoryHash'
+				'dojox/app/main'
 			],
 
 			//include: [ 'dojo/i18n', 'dojo/domReady', 'dojo/text', 'dojox/json/ref', 'app/run' ],
