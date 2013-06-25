@@ -9,6 +9,7 @@
  *
  * Look to `util/build/buildControlDefault.js` for more information on available options and their default values.
  */
+require(["dojox/app/build/buildControlApp"],function(bc){});
 
 var profile = {
 	// `basePath` is relative to the directory containing this profile file; in this case, it is being set to the
@@ -63,29 +64,30 @@ var profile = {
 			// the main application `app/main` and the `dojo/i18n` and `dojo/domReady` modules because, while they are
 			// all conditional dependencies in `app/main`, we do not want to have to make extra HTTP requests for such
 			// tiny files.
-			include: [ 'dojo/i18n', 'dojo/domReady', 'dojo/text', 'dojox/json/ref', 'app/main', 'app/run' ],
+			include: [ 
+				'dojo/i18n', 
+				'dojo/domReady', 
+				'dojo/text', 
+				'dojox/json/ref', 
+				'app/main', 
+				'app/run',
+				//Add App Framework
+				'dojox/app/main',
+				//Add any modules inside a has in the config.json
+				//This is a bug in dojo/app/build
+				'dojox/app/controllers/History',
+        		'dojox/app/controllers/HistoryHash'
+			],
+
+			//include: [ 'dojo/i18n', 'dojo/domReady', 'dojo/text', 'dojox/json/ref', 'app/run' ],
 
 			// By default, the build system will try to include `dojo/main` in the built `dojo/dojo` layer, which adds
 			// a bunch of stuff we do not want or need. We want the initial script load to be as small and quick to
 			// load as possible, so we configure it as a custom, bootable base.
 			boot: true,
 			customBase: true
-		},
-		'dojox/app/main' :{
-			include: [
-				"dojox/app/controllers/Load",
-        		"dojox/app/controllers/Transition",
-        		"dojox/app/controllers/Layout",
-        		"dojox/app/controllers/History",
-        		"dojox/app/controllers/HistoryHash",
-        		"dojox/css3/transit",
-        		"dojox/app/View"
-			],
 		}
-
-		
 	},
-
 	// Providing hints to the build system allows code to be conditionally removed on a more granular level than
 	// simple module dependencies can allow. This is especially useful for creating tiny mobile builds.
 	// Keep in mind that dead code removal only happens in minifiers that support it! Currently, only Closure Compiler

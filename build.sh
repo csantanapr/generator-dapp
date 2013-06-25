@@ -23,6 +23,9 @@ LOADERCONF="$SRCDIR/$LOADERMID.js"
 # Main application package build configuration
 PROFILE="$BASEDIR/profiles/app.profile.js"
 
+#App Framework Config File
+APPCONFIG="$SRCDIR/app/config.json"
+
 # Configuration over. Main application start up!
 
 if [ ! -d "$TOOLSDIR" ]; then
@@ -39,7 +42,9 @@ echo " Done"
 cd "$TOOLSDIR"
 
 if which node >/dev/null; then
-	node ../../dojo/dojo.js load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" $@
+    echo "running node ../../dojo/dojo.js load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
+	node ../../dojo/dojo.js load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
+    echo "************************If you see this line the build didn't blew up**************************"
 elif which java >/dev/null; then
 	java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" $@
 else
@@ -71,10 +76,10 @@ cp -a "$DISTDIR/index.html" "$MOBILE_DISTDIR"
 cp -a "$DISTDIR/app" "$MOBILE_DISTDIR"
 #create dojo stuff
 mkdir -p "$MOBILE_DISTDIR/dojo"
-mkdir -p "$MOBILE_DISTDIR/dojox/app"
+
 #copy dojo stuff
-cp -a "$DISTDIR/dojo/dojo.js"  "$MOBILE_DISTDIR/dojo"
-cp -a "$DISTDIR/dojox/app/main.js" "$MOBILE_DISTDIR/dojox/app"
+cp -a "$DISTDIR/dojo/dojo.js"  "$MOBILE_DISTDIR/dojo/dojo.js"
+cp -a "$DISTDIR/dojo/nls"      "$MOBILE_DISTDIR/dojo"
 
 
 
