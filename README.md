@@ -1,4 +1,4 @@
-Dojo App Boilerplate: A Starter Kit for Dojo Development using DojoX/App MVC Framework
+Dojo App Boilerplate: A Starter Kit for Dojo Development using Single Page DojoX/App Framework
 ====================================================
 
 - The Dojo App Boilerplate is a set of files to help you rapidly get up and running with the Dojo Toolkit and dojox/app mvc framework. 
