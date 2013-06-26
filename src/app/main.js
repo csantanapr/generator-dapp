@@ -17,8 +17,7 @@
  * More information about everything described about the loader throughout this file can be found at
  * <http://dojotoolkit.org/reference-guide/loader/amd.html>.
  */
-define([ 'dojo/has', 'require' ], function (has, require) {
-	var app = {};
+define([ "dojo/sniff", 'require', "dojox/app/main", "dojox/json/ref","dojo/text!app/config.json", 'dojo/domReady!' ], function (has, require, Application, json, config) {
 
 	/**
 	 * This main.js file conditionally executes different code depending upon the host environment it is loaded in.
@@ -26,29 +25,14 @@ define([ 'dojo/has', 'require' ], function (has, require) {
 	 * require different functionality (i.e. client/server or desktop/tablet/phone).
 	 */
 	if (has('host-browser')) {
-		/*
-		 * This require call's first dependency, `./Dialog`, uses a relative module identifier; you should use this
-		 * type of notation for dependencies *within* a package in order to ensure the package is fully portable. It
-		 * works like a path, where `./` refers to the current directory and `../` refers to the parent directory. If
-		 * you are referring to a module in a *different* package (like `dojo` or `dijit`), you should *not* use a
-		 * relative module identifier.
-		 *
-		 * The second dependency is a plugin dependency; in this case, it is a dependency on the special functionality
-		 * of the `dojo/domReady` plugin, which simply waits until the DOM is ready before resolving.
-		 * The `!` after the module name indicates you want to use special plugin functionality; if you were to
-		 * require just `dojo/domReady`, it would load that module just like any other module, without the special
-		 * plugin functionality.
-		 */
  		 
-       require([ "dojox/app/main", "dojo/sniff", "dojox/json/ref", "dojo/text!app/config.json", 'dojo/domReady!' ], 
-       	function (Application, has, json, config) {
 
        		// populate has flag on whether html5 history is correctly supported or not
-		    has.add("html5history", !has("ie") || has("ie") > 9);		    
+		has.add("html5history", !has("ie") || has("ie") > 9);		    
 
-		    Application(json.fromJson(config));
+		Application(json.fromJson(config));
 			
-		});
+
       
 	}
 	else {

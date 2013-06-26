@@ -52,36 +52,26 @@ var profile = {
 	// only suitable if you are not supporting IE7 and earlier.)
 	selectorEngine: 'acme',
 
+	packages: [
+		// If you are registering a package that has an identical name and location, you can just pass a string
+		// instead, and it will configure it using that string for both the "name" and "location" properties. Handy!
+		'dojo',
+		'dijit',
+		'dojox',
+
+		// For reference, this is what a more verbose package declaration looks like.
+		{ name: 'app', location: 'app', map: {} }
+	],
+
 	// Builds can be split into multiple different JavaScript files called "layers". This allows applications to
 	// defer loading large sections of code until they are actually required while still allowing multiple modules to
 	// be compiled into a single file.
 	layers: {
-		// This is the main loader module. It is a little special because it is treated like an AMD module even though
-		// it is actually just plain JavaScript. There is some extra magic in the build system specifically for this
-		// module ID.
-		'dojo/dojo': {
-			// In addition to the loader `dojo/dojo` and the loader configuration file `app/run`, we are also including
-			// the main application `app/main` and the `dojo/i18n` and `dojo/domReady` modules because, while they are
-			// all conditional dependencies in `app/main`, we do not want to have to make extra HTTP requests for such
-			// tiny files.
-			include: [ 
-				'dojo/i18n', 
-				'dojo/domReady', 
-				'dojo/text', 
-				'dojox/json/ref', 
-				'app/main', 
-				'app/run',
-				//Add App Framework
-				'dojox/app/main'
-			],
-
-			//include: [ 'dojo/i18n', 'dojo/domReady', 'dojo/text', 'dojox/json/ref', 'app/run' ],
-
-			// By default, the build system will try to include `dojo/main` in the built `dojo/dojo` layer, which adds
-			// a bunch of stuff we do not want or need. We want the initial script load to be as small and quick to
-			// load as possible, so we configure it as a custom, bootable base.
-			boot: true,
-			customBase: true
+		//IMPORTANT make sure the first layer is the one that will get the modules from config.json by default
+		//appConfigFile adds config.json modules to first layer
+		"app/main": {
+			//any dependencies for module app/main.js get discover and added to this layer
+			include: ["app/main"]
 		}
 	},
 	// Providing hints to the build system allows code to be conditionally removed on a more granular level than

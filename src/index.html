@@ -18,21 +18,18 @@
          Below, we’re doing the following:
 
          1. Enabling the AMD loader. (async: 1)
-         2. Fixing the loader to use normal AMD resolution of unregistered module paths (relative to baseDir)
-            instead of the traditional Dojo resolution method (relative to the parent of baseDir).
-            (tlmSiblingOfDojo: 0)
          3. Enabling debugging. (isDebug: 1)
 
-         The remainder of Dojo configuration, as well as our application’s instantiation, occurs within
-         app/run.js.
+
 
 		 NOTE: `build.sh` is responsible for removing the "isDebug" flag when deploying to production. If you modify
 		 this flag at all, you will break the build! -->
-    <script data-dojo-config="async: 1, tlmSiblingOfDojo: 0, isDebug: 1" src="dojo/dojo.js"></script>
+    <script data-dojo-config="async: 1, isDebug: 1, tlmSiblingOfDojo: 1" src="dojo/dojo.js"></script>
 
-    <!-- Load the loader configuration script. Note that this module ID is hard-coded in build.sh in order to provide
-         an optimised build that loads as few as one script for the entire application. If you change the name or
-         location of this module, you will need to update build.sh too. -->
-    <script src="app/run.js"></script>
+
+    <script type="text/javascript">
+        require([ 'app/main' ]);
+    </script>
+
 </body>
 </html>
