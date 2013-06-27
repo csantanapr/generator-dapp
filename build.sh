@@ -40,7 +40,19 @@ if which node >/dev/null; then
 	node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
     echo "************************If you see this line the build didn't blew up**************************"
 elif which java >/dev/null; then
-	java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" $@
+	echo "The build produce errors when running with java, I recommend installing node"
+    echo "When using Java to build dojo error 303 for html files being inserted to layer will show up: "
+    echo "error(303) Missing include module for layer."
+    echo "missing: app/views/app.html; layer: app/main"
+    echo "missing: app/views/view1/view1.html; layer: app/main"
+    echo ""
+    echo "Please install and use node to build dojo is much faster than Java and also I want to you to smile"
+    echo ""
+    echo "If you have a good reason to build dojo using java uncomment the next line in this script"
+    echo "java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
+    
+    #java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
+    exit 1
 else
 	echo "Need node.js or Java to build!"
 	exit 1

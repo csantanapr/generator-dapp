@@ -21,16 +21,12 @@ var profile = {
 		// are typically binaries (images, etc.) and may be corrupted by the build system if it attempts to process
 		// them and naively assumes they are scripts.
 		copyOnly: function (filename, mid) {
-			if(/config.json$/.test(filename)){
-				return true;
-
-			}else{
 				return (/^app\/resources\//.test(filename) && !/\.css$/.test(filename));
-			}
-			
-			
+
 		},
 
+		//If you see 303 errors in dojo build is because your package is missing this line
+		//to state to all html files as declarative
 		declarative: function(filename){
 			return /\.html?$/.test(filename); // tags any .html or .htm files as declarative
 		},

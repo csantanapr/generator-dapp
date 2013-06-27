@@ -71,7 +71,9 @@ var profile = {
 		//appConfigFile adds config.json modules to first layer
 		"app/main": {
 			//any dependencies for module app/main.js get discover and added to this layer
-			include: ["app/main"]
+			include: [
+				"app/main"
+			]
 		}
 	},
 	// Providing hints to the build system allows code to be conditionally removed on a more granular level than

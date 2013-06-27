@@ -17,7 +17,18 @@
  * More information about everything described about the loader throughout this file can be found at
  * <http://dojotoolkit.org/reference-guide/loader/amd.html>.
  */
-define([ "dojo/sniff", 'require', "dojox/app/main", "dojox/json/ref","dojo/text!app/config.json", 'dojo/domReady!' ], function (has, require, Application, json, config) {
+define([ 
+	'dojo/sniff',
+	'require',
+	'dojox/app/main',
+	'dojox/json/ref',
+	'dojo/text!app/config.json',
+	//TODO: add all html templates being use in config.json to force them to be included in layer
+	// when doing custom dojo build, the build process will recognize them as dependencies for the package
+	'dojo/text!app/views/app.html',
+	'dojo/text!app/views/view1/view1.html',
+	'dojo/domReady!'
+], function (has, require, Application, json, config) {
 
 	/**
 	 * This main.js file conditionally executes different code depending upon the host environment it is loaded in.
