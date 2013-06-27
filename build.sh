@@ -14,12 +14,6 @@ TOOLSDIR="$SRCDIR/util/buildscripts"
 # Destination directory for built code
 DISTDIR="$BASEDIR/dist"
 
-# Module ID of the main application package loader configuration
-#LOADERMID="app/run"
-
-# Main application package loader configuration
-#LOADERCONF="$SRCDIR/$LOADERMID.js"
-
 # Main application package build configuration
 PROFILE="$BASEDIR/profiles/app.profile.js"
 
@@ -42,11 +36,11 @@ echo " Done"
 cd "$TOOLSDIR"
 
 if which node >/dev/null; then
-    echo "running node ../../dojo/dojo.js load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
+    echo "running node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
 	node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
     echo "************************If you see this line the build didn't blew up**************************"
 elif which java >/dev/null; then
-	java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --require "$LOADERCONF" --profile "$PROFILE" --releaseDir "$DISTDIR" $@
+	java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" $@
 else
 	echo "Need node.js or Java to build!"
 	exit 1
@@ -54,12 +48,11 @@ fi
 
 cd "$BASEDIR"
 
-#LOADERMID=${LOADERMID//\//\\\/}
-
-# Copy & minify index.html to dist
-cat "$SRCDIR/index.html" | tr '\n' ' ' | \
+# Copy & and disable debug
+cat "$SRCDIR/index.html" | \
 perl -pe "
-  s/isDebug: *1,//;                           # Remove isDebug
+  s/isDebug: 1/isDebug: 0/;                           # Remove isDebug" > "$DISTDIR/index.html"
+#s/\s+/ /g;                                 # Collapse white-space" > "$DISTDIR/index.html"
 
 #Create Mini App for Mobile Development
 
