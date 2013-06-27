@@ -26,7 +26,7 @@ some dependencies by running the following commands:
     which node
     which java
 
-If at least `node` is available, you're ready to go; `cd` to your project
+I you have `node` is available, you're ready to go; `cd` to your project
 directory and follow the Quick Start instructions above. If Java is missing,
 you will need to install it. Node.js is optional, but will reward you with
 much faster builds.
