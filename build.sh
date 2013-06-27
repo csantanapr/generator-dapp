@@ -78,16 +78,18 @@ perl -pe "
 
 ##############Copy App stuff###########################
 mkdir -p "$MOBILE_DISTDIR/app/nls"
-mkdir -p "$MOBILE_DISTDIR/app/css"
+mkdir -p "$MOBILE_DISTDIR/app/views/css"
+mkdir -p "$MOBILE_DISTDIR/app/views/images"
 
 #index.html
 cp -a "$DISTDIR/index.html" "$MOBILE_DISTDIR"
 
 #css
-cp -a "$DISTDIR/app/css/app.css" "$MOBILE_DISTDIR/app/css/"
+cp -a "$DISTDIR/app/views/css/app.css" "$MOBILE_DISTDIR/app/views/css/"
 
 #images
-cp -a "$DISTDIR/app/images" "$MOBILE_DISTDIR/app/"
+cp -a "$DISTDIR/app/views/images" "$MOBILE_DISTDIR/app/views/"
+
 
 #js My App (app/main) layer (contains js, html, and config.json) 
 cp -a "$DISTDIR/app/main.js"*     "$MOBILE_DISTDIR/app/"
@@ -97,7 +99,12 @@ cp -a "$DISTDIR/app/main.js"*     "$MOBILE_DISTDIR/app/"
 cp -a "$DISTDIR/app/nls/main_en-us.js"*     "$MOBILE_DISTDIR/app/nls"
 
 
-
+##############Copy View 1 stuff (Optional)####################################
+#Just in case there are static files specific to view1 and not other views1
+#Showing this as an example, normal case images should go in views/app/images/
+mkdir -p "$MOBILE_DISTDIR/app/views/view1"
+#images
+cp -a "$DISTDIR/app/views/view1/images" "$MOBILE_DISTDIR/app/views/view1/"
 
 
 ##############Copy Dojo stuff###########################
