@@ -20,6 +20,9 @@ PROFILE="$BASEDIR/profiles/app.profile.js"
 #App Framework Config File
 APPCONFIG="$SRCDIR/app/config.json"
 
+# Destination directory for built code
+MOBILE_DISTDIR="$BASEDIR/mobile/www"
+
 # Configuration over. Main application start up!
 
 if [ ! -d "$TOOLSDIR" ]; then
@@ -31,6 +34,9 @@ echo "Building application with $PROFILE to $DISTDIR."
 
 echo -n "Cleaning old files..."
 rm -rf "$DISTDIR"
+echo " Done"
+echo -n "Cleaning mobile Mobile Output"
+rm -rf "$MOBILE_DISTDIR"
 echo " Done"
 
 cd "$TOOLSDIR"
@@ -60,28 +66,63 @@ fi
 
 cd "$BASEDIR"
 
+
+
 # Copy & and disable debug
 cat "$SRCDIR/index.html" | \
 perl -pe "
   s/isDebug: 1/isDebug: 0/;                           # Remove isDebug" > "$DISTDIR/index.html"
 #s/\s+/ /g;                                 # Collapse white-space" > "$DISTDIR/index.html"
 
-#Create Mini App for Mobile Development
+#Create distribution for mobile development
 
-# Destination directory for built code
-MOBILE_DISTDIR="$BASEDIR/mobile/www"
-echo -n "Cleaning mobile Mobile Output"
-rm -rf "$MOBILE_DISTDIR"
-echo " Done"
-mkdir -p "$MOBILE_DISTDIR"
+##############Copy App stuff###########################
+mkdir -p "$MOBILE_DISTDIR/app/nls"
+mkdir -p "$MOBILE_DISTDIR/app/resources"
+
+#index.html
 cp -a "$DISTDIR/index.html" "$MOBILE_DISTDIR"
-#copy app to pick up css, template html files, 1 per language app/nls/main_en-us.js, and 1 layer file main.js
-cp -a "$DISTDIR/app" "$MOBILE_DISTDIR"
-#create dojo stuff
-mkdir -p "$MOBILE_DISTDIR/dojo"
 
-#copy 1 dojo file and smile :-)
-cp -a "$DISTDIR/dojo/dojo.js"  "$MOBILE_DISTDIR/dojo/dojo.js"
+#css
+cp -a "$DISTDIR/app/resources/app.css" "$MOBILE_DISTDIR/app/resources/"
+
+#images
+cp -a "$DISTDIR/app/images" "$MOBILE_DISTDIR/app/"
+
+#js My App (app/main) layer (contains js, html, and config.json) 
+cp -a "$DISTDIR/app/main.js"     "$MOBILE_DISTDIR/app/"
+cp -a "$DISTDIR/app/main.js.map" "$MOBILE_DISTDIR/app/"
+
+#nls files (en for now)
+cp -a "$DISTDIR/app/nls/main_en-us.js"     "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_en-us.js.map" "$MOBILE_DISTDIR/app/nls"
+
+
+
+
+##############Copy Dojo stuff###########################
+mkdir -p "$MOBILE_DISTDIR/dojo"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/android"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/iphone"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry"
+
+#css dojo
+cp -a "$DISTDIR/dojox/mobile/themes/android/android.css"       "$MOBILE_DISTDIR/dojox/mobile/themes/android/"
+cp -a "$DISTDIR/dojox/mobile/themes/iphone/iphone.css"         "$MOBILE_DISTDIR/dojox/mobile/themes/iphone/"
+cp -a "$DISTDIR/dojox/mobile/themes/blackberry/blackberry.css" "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry/"
+
+#images dojo
+cp -a "$DISTDIR/dojox/mobile/themes/android/images"      "$MOBILE_DISTDIR/dojox/mobile/themes/android/"
+cp -a "$DISTDIR/dojox/mobile/themes/iphone/images"       "$MOBILE_DISTDIR/dojox/mobile/themes/iphone/"
+cp -a "$DISTDIR/dojox/mobile/themes/blackberry/images"   "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry/"
+
+
+#js dojo layer
+cp -a "$DISTDIR/dojo/dojo.js" "$MOBILE_DISTDIR/dojo/"
+cp -a "$DISTDIR/dojo/dojo.js.map" "$MOBILE_DISTDIR/dojo/"
+
+
+
 
 
 
