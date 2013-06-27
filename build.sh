@@ -78,24 +78,24 @@ perl -pe "
 
 ##############Copy App stuff###########################
 mkdir -p "$MOBILE_DISTDIR/app/nls"
-mkdir -p "$MOBILE_DISTDIR/app/resources"
+mkdir -p "$MOBILE_DISTDIR/app/css"
 
 #index.html
 cp -a "$DISTDIR/index.html" "$MOBILE_DISTDIR"
 
 #css
-cp -a "$DISTDIR/app/resources/app.css" "$MOBILE_DISTDIR/app/resources/"
+cp -a "$DISTDIR/app/css/app.css" "$MOBILE_DISTDIR/app/css/"
 
 #images
 cp -a "$DISTDIR/app/images" "$MOBILE_DISTDIR/app/"
 
 #js My App (app/main) layer (contains js, html, and config.json) 
-cp -a "$DISTDIR/app/main.js"     "$MOBILE_DISTDIR/app/"
-cp -a "$DISTDIR/app/main.js.map" "$MOBILE_DISTDIR/app/"
+cp -a "$DISTDIR/app/main.js"*     "$MOBILE_DISTDIR/app/"
+
 
 #nls files (en for now)
-cp -a "$DISTDIR/app/nls/main_en-us.js"     "$MOBILE_DISTDIR/app/nls"
-cp -a "$DISTDIR/app/nls/main_en-us.js.map" "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_en-us.js"*     "$MOBILE_DISTDIR/app/nls"
+
 
 
 
@@ -118,8 +118,8 @@ cp -a "$DISTDIR/dojox/mobile/themes/blackberry/images"   "$MOBILE_DISTDIR/dojox/
 
 
 #js dojo layer
-cp -a "$DISTDIR/dojo/dojo.js" "$MOBILE_DISTDIR/dojo/"
-cp -a "$DISTDIR/dojo/dojo.js.map" "$MOBILE_DISTDIR/dojo/"
+cp -a "$DISTDIR/dojo/dojo.js"* "$MOBILE_DISTDIR/dojo/"
+
 
 
 

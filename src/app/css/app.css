@@ -14,5 +14,5 @@
 /* top app css consolidates laytout and theme */
 @import './app_theme.css';
 @import './app_layout.css';
-@import '../../app/views/view1/resources/view1.css';
+@import '../../app/views/view1/css/view1.css';
 
