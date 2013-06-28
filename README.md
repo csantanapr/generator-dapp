@@ -43,8 +43,8 @@ A brief tour
 * The file `src/app/views/app.html` contains the App level html template and its specified in `src/app/config.json`
 * The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module compose of css/images/html/js
   they are specified in `src/app/config.json`. JS files (i.e. view1.js) are View Controllers, HTML files (view1.html)
-  are View Templates/Fragements
-* Add Views, View Controllers, and Object Stores (Model) starting by modifying the `src/app/config.json`
+  are View Templates/Fragments
+* Add View Templates, View Controllers, and Object Stores (Model) starting by modifying the `src/app/config.json`
 * The provided directory structure for css, html, and js for your App is defined in config.json, you can change if you want to
 
 Useful resources
