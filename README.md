@@ -37,7 +37,6 @@ A brief tour
   production use using the Dojo build tool. It depends on the presence of the
   build profile at `profiles/app.profile.js` and App config `src/app/config.json` .
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
----
 * The file `src/app/config.json` its the brain to compose the App and also use to figure out dependencies for Dojo Build
 * The file `src/app/views/css/app.css` contains import statements to load the CSS it's inserted from `src/index.html` 
 * The file `src/app/views/app.js/` is an additional App Controller
@@ -45,7 +44,6 @@ A brief tour
 * The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module compose of css/images/html/js
   they are specified in `src/app/config.json`. JS files (i.e. view1.js) are View Controllers, HTML files (view1.html)
   are View Templates/Fragements
-
 * Add Views, View Controllers, and Object Stores (Model) starting by modifying the `src/app/config.json`
 * The provided directory structure for css, html, and js for your App is defined in config.json, you can change if you want to
 
