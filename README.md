@@ -15,7 +15,7 @@ Quick Start
 1. Develop your project in `src/` until it is amazing.
 2. Run `build.sh`, which will create an awesome optimized build in `dist/`.
 3. Upload `dist/` for millions of people the world over to enjoy.
-4. Use `mobile/www` to create an awesome Hybrid Mobile App with [Apache Cordova/PhoneGap](cordova.io)
+4. Use `mobile/www` to create an awesome Hybrid Mobile App with [Apache Cordova/PhoneGap](http://cordova.io)
 4. Happiness, and stop crying because you can't figure out how to build dojo
 
 ### Windows Users
@@ -24,33 +24,30 @@ If you have [msysgit](http://git-scm.com) installed, run Git Bash and verify
 some dependencies by running the following commands:
 
     which node
-    which java
 
-I you have `node` is available, you're ready to go; `cd` to your project
-directory and follow the Quick Start instructions above. If Java is missing,
-you will need to install it. Node.js is optional, but will reward you with
-much faster builds.
+Node will reward you with much faster builds.
 
 A brief tour
 ------------
 
-* The starting point of the boilerplate is the file at `src/index.html` for
-  the client, and `src/server.sh` for a server running Node.js. These files
-  are responsible for loading the Dojo loader and the application’s
-  bootstrapper script.
-* The file `src/app/run.js` is your application’s bootstrapper script. In
-  it, you can configure paths, packages, and other configuration options
-  that should apply to both the client and the server. By default, this file
-  simply configures paths and packages and then loads `src/app/main.js`
-  (by way of the second `[ 'app' ]` argument).
+* The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`  
+  It's responsible for loading the Dojo loader and the application’s
+  bootstrapper with config.json .
 * The file `build.sh` takes your application files and builds them for
   production use using the Dojo build tool. It depends on the presence of the
-  build profile at `profiles/app.profile.js`.
-* The file `src/app/resources/app.css` contains import statements to load
-  the CSS . 
+  build profile at `profiles/app.profile.js` and App config `src/app/config.json` .
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
-* Add Views, View Controllers, and Object Stores (Model) starting by modifying the config.json
-* The provider directory structure for css, html, and js for your App is defined in config.json the provided one is just an example
+---
+* The file `src/app/config.json` its the brain to compose the App and also use to figure out dependencies for Dojo Build
+* The file `src/app/views/css/app.css` contains import statements to load the CSS it's inserted from `src/index.html` 
+* The file `src/app/views/app.js/` is an additional App Controller
+* The file `src/app/views/app.html` contains the App level html template and its specified in `src/app/config.json`
+* The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module compose of css/images/html/js
+  they are specified in `src/app/config.json`. JS files (i.e. view1.js) are View Controllers, HTML files (view1.html)
+  are View Templates/Fragements
+
+* Add Views, View Controllers, and Object Stores (Model) starting by modifying the `src/app/config.json`
+* The provided directory structure for css, html, and js for your App is defined in config.json, you can change if you want to
 
 Useful resources
 ----------------
@@ -63,7 +60,7 @@ Useful resources
 About the boilerplate
 ---------------------
 
-- This project started because I always spent a few weeks getting started with a new version of Dojo, and use this as a learning exercise to get to know the Web Project Dojo/App which i know some of the folks that work on it.
+- This project started because I always spent a few weeks getting started with a new version of Dojo, and use this as a learning exercise to get to know the Web Project Dojox/App which i know some of the folks that work on it.
 - This boilerplate is constantly updated to try to reflect the latest and
 greatest features and design patterns for writing Web apps with Dojo, but
 it relies heavily on information and contributions from other users. If
@@ -76,22 +73,26 @@ accepted, for the good of us all!)
 Future
 ---
 
-- Basic boilerplate to create App generator/scalfolder for other projects:
-    - [Yoeman](http://yeoman.io)
-    - [IBM Worklight](http://ibm.com/mobilefirst)
-    - [Apache Cordova CLI](http://cordova.io)
+- Basic boilerplate to create App generator/scaffolding for other projects:
+  - [Yoeman](http://yeoman.io)
+  - [IBM Worklight](http://ibm.com/mobilefirst)
+  - [Apache Cordova CLI](http://cordova.io)
 - Examples on how to integrate Dojox/App with other Projects:
-    - [Handlebars](http://handlebarsjs.com)
-    - [JQuery](http://jquery.com)
-    - [Jasmine](http://pivotal.github.com/jasmine)
-    - [The Intern](http://theintern.io)
-    - [NodeJS](http://nodejs.org)
-    - [NPM](https://npmjs.org)
-    - [Grunt](http://gruntjs.com)
-    - [MongoDB](http://www.mongodb.org)
+  - [Handlebars](http://handlebarsjs.com)
+  - [JQuery](http://jquery.com)
+  - [Jasmine](http://pivotal.github.com/jasmine)
+  - [The Intern](http://theintern.io)
+  - [NodeJS](http://nodejs.org)
+  - [NPM](https://npmjs.org)
+  - [Grunt](http://gruntjs.com)
+  - [MongoDB](http://www.mongodb.org)
 - Education resources
-    - Screencasts
-    - Tutorials
+  - Screencasts
+  - Tutorials
+- Next-Gen 2.x
+  - [Aura](http://aurajs.com)
+  - [BackBoneJS](http://backbonejs.org)
+  - [AngularJS](http://angularjs.org)
 
 License
 -------
