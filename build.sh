@@ -44,7 +44,7 @@ cd "$TOOLSDIR"
 if which node >/dev/null; then
     echo "running node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
 	node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
-    echo "************************If you see this line the build didn't blew up**************************"
+    echo "************************If you see this line the build Did NOT blew up**************************"
 elif which java >/dev/null; then
 	echo "The build produce errors when running with java, I recommend installing node"
     echo "When using Java to build dojo error 303 for html files being inserted to layer will show up: "
@@ -56,7 +56,7 @@ elif which java >/dev/null; then
     echo ""
     echo "If you have a good reason to build dojo using java uncomment the next line in this script"
     echo "java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@"
-    
+
     #java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$DISTDIR" --appConfigFile "$APPCONFIG" $@
     exit 1
 else
@@ -64,15 +64,19 @@ else
 	exit 1
 fi
 
+echo "Dojo build done: $DISTDIR"
+
+
+
+
 cd "$BASEDIR"
-
-
-
 # Copy & and disable debug
 cat "$SRCDIR/index.html" | \
 perl -pe "
   s/isDebug: 1/isDebug: 0/;                           # Remove isDebug" > "$DISTDIR/index.html"
 #s/\s+/ /g;                                 # Collapse white-space" > "$DISTDIR/index.html"
+
+
 
 #Create distribution for mobile development
 
@@ -91,12 +95,15 @@ cp -a "$DISTDIR/app/views/css/app.css" "$MOBILE_DISTDIR/app/views/css/"
 cp -a "$DISTDIR/app/views/images" "$MOBILE_DISTDIR/app/views/"
 
 
-#js My App (app/main) layer (contains js, html, and config.json) 
-cp -a "$DISTDIR/app/main.js"*     "$MOBILE_DISTDIR/app/"
+#js My App (app/main) layer (contains js, html, and config.json)
+cp -a "$DISTDIR/app/main.js"         "$MOBILE_DISTDIR/app/"
+cp -a "$DISTDIR/app/main.js.map"     "$MOBILE_DISTDIR/app/"
 
 
-#nls files (en for now)
-cp -a "$DISTDIR/app/nls/main_en-us.js"*     "$MOBILE_DISTDIR/app/nls"
+#nls files (en and es for now)
+# TODO: figure out how to create single layer with all languages
+cp -a "$DISTDIR/app/nls/main_en"*          "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_es"*          "$MOBILE_DISTDIR/app/nls"
 
 
 ##############Copy View 1 stuff (Optional)####################################
@@ -125,10 +132,11 @@ cp -a "$DISTDIR/dojox/mobile/themes/blackberry/images"   "$MOBILE_DISTDIR/dojox/
 
 
 #js dojo layer
-cp -a "$DISTDIR/dojo/dojo.js"* "$MOBILE_DISTDIR/dojo/"
+cp -a "$DISTDIR/dojo/dojo.js"       "$MOBILE_DISTDIR/dojo/"
+cp -a "$DISTDIR/dojo/dojo.js.map"   "$MOBILE_DISTDIR/dojo/"
 
 
-
+echo "Copy App distribution done: $MOBILE_DISTDIR"
 
 
 
