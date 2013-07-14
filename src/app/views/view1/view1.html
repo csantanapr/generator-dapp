@@ -1,8 +1,14 @@
-<div class="view view1">
+<div class="view1">
     <div>${nls.view1_template_title}</div>
     <div>${name}</div>
     <div>${template}</div>
     <div>${nls.app_string}</div>
     <div>${nls.view1_string}</div>
     <a href="${nls.locale_link}">${nls.locale_link}</a>
+    <ul data-dojo-type="dojox/mobile/RoundRectList">
+        <li data-dojo-type="dojox/mobile/ListItem" data-dojo-props="clickable:true,target:'view2',url:'#view2'">
+            Go to View 2
+        </li>
+    </ul>
+
 </div>

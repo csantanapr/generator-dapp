@@ -3,6 +3,7 @@
 <head>
     <meta charset="utf-8">
     <title>Dojox/App Boilerplate</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
     <!-- Application-specific CSS should be stored in your application’s package to ensure portability and to allow
          the build system to combine & minify it. -->
     <link rel="stylesheet" href="app/views/css/app.css">
@@ -34,6 +35,7 @@
         locale: location.search.match(/locale=([\w\-]+)/) ? RegExp.$1 : "en-us"
     };
     </script>
+    <script type="text/javascript" src="dojox/mobile/deviceTheme.js"></script>
     <script data-dojo-config="async: 1, isDebug: 1, tlmSiblingOfDojo: 1" src="dojo/dojo.js"></script>
 
 

@@ -1,7 +1,7 @@
 {
     //Mandatory
-    "id": "App",  
-    //Optional  
+    "id": "App",
+    //Optional
     "name": "Boilerplate-App",
     //Optional
     "description": "Sample Boilerplate-App to help devs get starteds",
@@ -11,7 +11,7 @@
             "app": "../app"
         }
     },
-    /* 
+    /*
     //Optional, default is "dojox/css3/transit"
     "transit": "dojox/css3/transit",
     */
@@ -51,15 +51,15 @@
         }
     },
     */
-    
+
     //Optional
     "template": "app/views/app.html",
-    
+
     //Optional, other examples are "flip, none"
     "defaultTransition": "slide",
     //Mandatory, one or a set of views view1+view2+view3
     "defaultView": "view1",
-    
+
     //Optional, App level stings
     "nls": "app/nls/app_strings",
     //Mandatory, Specify Application child views
@@ -67,7 +67,7 @@
         "view1":{
             //Mandatory for defaultViews
             "template": "app/views/view1/view1.html",
-            
+
             //Optional, listens to View.emit events
             //  init
             //  beforeActivate
@@ -77,12 +77,17 @@
             //  destroy
             //"controller": "app/views/view1/view1_controller.js",
             //Optional, overwrites the transition type only for this view
-            "transition": "fade",
+            "transition": "slide",
             //Optional, view level strings they get mixed into global nls object
             "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
-            "dependencies":[]
-            
+            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem","dojox/mobile/ScrollableView"]
+        },
+        "view2":{
+            //Mandatory for defaultViews
+            "template": "app/views/view2/view2.html",
+             "transition": "slide",
+            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem", "dojox/mobile/Button"]
         }
     },
     "has": {
