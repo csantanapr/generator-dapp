@@ -3,3 +3,8 @@
     background-color: rgb(37, 37, 39);
     color: white;
 }
+.clickable {
+    text-decoration: underline;
+    color: blue;
+    cursor: pointer;
+}

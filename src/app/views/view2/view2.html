@@ -1,16 +1,16 @@
 <div class="view2">
-    <div>${name}</div>
-    <div>${template}</div>
-    <div>${nls.app_string}</div>
-    <button  onclick="
-                     event.target.dispatchEvent(new CustomEvent('startTransition', {
+    <a class="clickable" onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
                                                 'bubbles':true,
                                                 'detail':   {
                                                             target: 'view1',
                                                             url: '#view1',
                                                             transitionDir: -1
                                                         }
-                                                }));
-                    ">
-    <-View1</button>
+                                                }));"
+    >
+    Back
+    </a>
+    <div>${name}</div>
+    <div>${template}</div>
+    <div>${nls.app_string}</div>
 </div>
