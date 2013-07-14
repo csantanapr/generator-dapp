@@ -18,7 +18,8 @@
     //Optional, but required when not using the parser, and its required by views
     "dependencies": [
         "dojox/app/controllers/History",
-        "dojox/app/controllers/HistoryHash"
+        "dojox/app/controllers/HistoryHash",
+        "dojox/mobile/deviceTheme"
 
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
@@ -81,13 +82,12 @@
             //Optional, view level strings they get mixed into global nls object
             "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
-            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem","dojox/mobile/ScrollableView"]
+            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem"]
         },
         "view2":{
             //Mandatory for defaultViews
             "template": "app/views/view2/view2.html",
-             "transition": "slide",
-            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem", "dojox/mobile/Button"]
+             "transition": "slide"
         }
     },
     "has": {

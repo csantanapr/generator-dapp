@@ -2,9 +2,7 @@
     <div>${name}</div>
     <div>${template}</div>
     <div>${nls.app_string}</div>
-    <div><a href="${nls.locale_link}">${nls.locale_link}</a></div>
     <button  onclick="
-                     var tran;
                      event.target.dispatchEvent(new CustomEvent('startTransition', {
                                                 'bubbles':true,
                                                 'detail':   {

@@ -30,6 +30,7 @@ define([
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
     'dojo/text!app/views/view1/view1.html',
+    'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
 ], function (has, require, Application, json, config) {
     'use strict';
