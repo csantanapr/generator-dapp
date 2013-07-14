@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
 set -e
+date1=$(date +"%s")
 
 # Base directory for this entire project
 BASEDIR=$(cd $(dirname $0) && pwd)
@@ -137,9 +138,8 @@ cp -a "$DISTDIR/dojo/dojo.js.map"   "$MOBILE_DISTDIR/dojo/"
 
 
 echo "Copy App distribution done: $MOBILE_DISTDIR"
+date2=$(date +"%s")
+diff=$(($date2-$date1))
+echo "$(($diff / 60)) minutes and $(($diff % 60)) seconds elapsed."
 
-
-
-
-
-echo "Build complete"
+echo "Build completed: $(($diff / 60)) minutes and $(($diff % 60)) seconds"
