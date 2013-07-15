@@ -1,5 +1,5 @@
 <div class="view2">
-    <a class="clickable" onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
+    <button onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
                                                 'bubbles':true,
                                                 'detail':   {
                                                             target: 'view1',
@@ -9,7 +9,8 @@
                                                 }));"
     >
     Back
-    </a>
+    </button>
+    
     <div>${name}</div>
     <div>${template}</div>
     <div>${nls.app_string}</div>
