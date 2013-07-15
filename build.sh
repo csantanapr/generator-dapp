@@ -120,11 +120,19 @@ mkdir -p "$MOBILE_DISTDIR/dojo"
 mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/android"
 mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/iphone"
 mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/holodark"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/windows"
+mkdir -p "$MOBILE_DISTDIR/dojox/mobile/themes/custom"
 
 #css dojo
 cp -a "$DISTDIR/dojox/mobile/themes/android/android.css"       "$MOBILE_DISTDIR/dojox/mobile/themes/android/"
 cp -a "$DISTDIR/dojox/mobile/themes/iphone/iphone.css"         "$MOBILE_DISTDIR/dojox/mobile/themes/iphone/"
+cp -a "$DISTDIR/dojox/mobile/themes/iphone/ipad.css"           "$MOBILE_DISTDIR/dojox/mobile/themes/iphone/"
 cp -a "$DISTDIR/dojox/mobile/themes/blackberry/blackberry.css" "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry/"
+cp -a "$DISTDIR/dojox/mobile/themes/holodark/holodark.css"     "$MOBILE_DISTDIR/dojox/mobile/themes/holodark/"
+cp -a "$DISTDIR/dojox/mobile/themes/windows/windows.css"       "$MOBILE_DISTDIR/dojox/mobile/themes/windows/"
+cp -a "$DISTDIR/dojox/mobile/themes/custom/custom.css"         "$MOBILE_DISTDIR/dojox/mobile/themes/custom/"
+
 
 #images dojo
 cp -a "$DISTDIR/dojox/mobile/themes/android/images"      "$MOBILE_DISTDIR/dojox/mobile/themes/android/"

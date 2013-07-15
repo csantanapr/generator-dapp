@@ -19,7 +19,10 @@
     "dependencies": [
         "dojox/app/controllers/History",
         "dojox/app/controllers/HistoryHash",
-        "dojox/mobile/deviceTheme"
+        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */
+        "dojox/mobile",
+        "dojox/mobile/deviceTheme",
+        
 
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
