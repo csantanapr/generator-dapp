@@ -4,7 +4,6 @@ src/dijit
 src/dojo
 src/util
 README.md
-.gitmodules
 build.sh
 dist
 
