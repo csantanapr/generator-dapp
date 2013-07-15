@@ -1,1 +1,1 @@
-.navPane {background-color: rgb(37, 37, 39); color: white;}.navPane {min-height: 40px;}.view1 {background-color: rgb(232, 232, 232);}.view1 {min-width: 100px;}
+.navPane {border: thin solid yellow;}.view {border: thin solid blue;}.navPane {min-height: 40px;}.view1 {font-style: italic;}.view1 {min-width: 100px;}
