@@ -5,5 +5,5 @@ src/dojo
 src/util
 README.md
 build.sh
-dist
+dist/build
 
