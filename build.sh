@@ -22,7 +22,7 @@ APPCONFIG="$SRCDIR/app/config.json"
 DIST_DIR="$BASEDIR/dist"
 
 # Destination directory for built code
-TMP_BUILD_DIR="$DIST_DIR/build"
+TMP_BUILD_DIR="$DIST_DIR/build.tmp"
 
 # Destination directory for built code
 DIST_WWW_DIR="$DIST_DIR/www"
