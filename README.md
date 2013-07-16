@@ -1,22 +1,21 @@
-A Starter Kit for Single Page App
+A Starter Kit for Single Page Apps
 ===
 
-- The Dojo App Boilerplate is a set of files to help you rapidly get up and running with the Dojo Toolkit and dapp mvc framework. 
-- It illustrates some basic best practices when working with Dojo based on the original work of [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate).
-- Helps you build dojo which is some time the most dificult of working with [dojotoolkit](dojotoolkit.org)
-- Builds an alternate small build to be embedded in a mobile App like [Apache Cordova/PhoneGap](cordova.io)
+- The DApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework. 
+- It illustrates some basic best practices when working with Single Web Page Apps.
+- Helps you build your App which is some time the most difficult of working with
+- The Single Page App is built to be use on creating a Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
 - Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project. 
 
 
 Quick Start
 -----------
 
-1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dojo-app-boilerplate.git`
-2. Develop your project in `src/` until it is amazing.
-3. Run `build.sh`, which will create 2 awesome optimized builds `dist/` & `mobile`.
-4. Upload `dist/` to a website for millions of people the world over to enjoy.
-5. Use `mobile/www` to create an awesome Hybrid Mobile App with [Apache Cordova/PhoneGap](http://cordova.io)
-6. Happiness, and stop crying because you can't figure out how to build dojo
+1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git`
+2. Develop your project in `src/app/` using html,css,js until it is amazing.
+3. Run `build.sh`, which will create an awesome optimized builds `dist/www`.
+4. Upload `dist/www` to a website or create an Hybrid Mobile App with [Apache Cordova/PhoneGap](http://cordova.io)
+5. Happiness, and stop crying because you can't figure out how to build dojo
 
 ### Windows Users
 
@@ -51,15 +50,13 @@ Useful resources
 
 * [Dojox/App Tutorial](http://dojotoolkit.org/documentation/tutorials/1.9/dojox_app)
 * [Dojox/App Reference](http://dojotoolkit.org/reference-guide/dojox/app.html#dojox-app)
-* [Dojo Reference Guide](http://dojotoolkit.org/reference-guide/)
-* [Dojo API Browser](http://dojotoolkit.org/api/)
 
 About the boilerplate
 ---------------------
 
 - This project started because I always spent a few weeks getting started with a new version of Dojo, and want to give it a try to the MV* DApp Framework to see how it can be improved.
 - This boilerplate is constantly updated to try to reflect the latest and
-greatest features and design patterns for developing Single Page Apps with Dojo, but
+greatest features and design patterns for developing Single Page App, but
 it relies heavily on information and contributions from other users. 
 - If you have an idea, suggestion, or problem, please [report
 it](https://github.com/csantanapr/dojo-app-boilerplate/issues) or create a pull
@@ -91,7 +88,7 @@ Future
 License
 -------
 
-The Dojo App Boilerplate is licensed under the [same
+The DApp Boilerplate is licensed under the [same
 terms](https://github.com/dojo/dojo/blob/master/LICENSE) as the Dojo
 Toolkit. Consult the individual projects (see the Useful resources section
 above) for additional licensing information.
