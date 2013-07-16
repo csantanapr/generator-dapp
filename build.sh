@@ -139,6 +139,9 @@ cp -a "$DISTDIR/dojox/mobile/themes/custom/custom.css"         "$MOBILE_DISTDIR/
 cp -a "$DISTDIR/dojox/mobile/themes/android/images"      "$MOBILE_DISTDIR/dojox/mobile/themes/android/"
 cp -a "$DISTDIR/dojox/mobile/themes/iphone/images"       "$MOBILE_DISTDIR/dojox/mobile/themes/iphone/"
 cp -a "$DISTDIR/dojox/mobile/themes/blackberry/images"   "$MOBILE_DISTDIR/dojox/mobile/themes/blackberry/"
+cp -a "$DISTDIR/dojox/mobile/themes/holodark/images"     "$MOBILE_DISTDIR/dojox/mobile/themes/holodark/"
+cp -a "$DISTDIR/dojox/mobile/themes/windows/images"      "$MOBILE_DISTDIR/dojox/mobile/themes/windows/"
+cp -a "$DISTDIR/dojox/mobile/themes/custom/images"       "$MOBILE_DISTDIR/dojox/mobile/themes/custom/"
 
 
 #js dojo layer
