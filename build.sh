@@ -103,8 +103,9 @@ cp -a "$DISTDIR/app/main.js.map"     "$MOBILE_DISTDIR/app/"
 
 #nls files (en and es for now)
 # TODO: figure out how to create single layer with all languages
-cp -a "$DISTDIR/app/nls/main_en"*          "$MOBILE_DISTDIR/app/nls"
-cp -a "$DISTDIR/app/nls/main_es"*          "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_en-us.js"          "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_en-gb.js"          "$MOBILE_DISTDIR/app/nls"
+cp -a "$DISTDIR/app/nls/main_es-es.js"          "$MOBILE_DISTDIR/app/nls"
 
 
 ##############Copy View 1 stuff (Optional)####################################
