@@ -1,6 +1,6 @@
 {
 	"name": "app",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"main": "main",
 	"dependencies": {
 		"dojo": "1.9.1",
@@ -19,8 +19,8 @@
 			"url": "http://bugs.dojotoolkit.org/browser/dojo/trunk/LICENSE#L13"
 		}
 	],
-	"bugs": "https://github.com/csantanapr/dojo-app-boilerplate/issues",
+	"bugs": "https://github.com/csantanapr/dapp-boilerplate/issues",
 	"keywords": ["JavaScript", "Dojo", "Boilerplate", "Example", "Howto","MVC","Framework"],
-	"homepage": "https://github.com/csantanapr/dojo-app-boilerplate",
+	"homepage": "https://github.com/csantanapr/dapp-boilerplate",
 	"dojoBuild": "package.js"
 }

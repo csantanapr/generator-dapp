@@ -1,5 +1,6 @@
 /*global define, console*/
 /*jslint todo: true */
+/*jshint todo: true */
 
 /**
  * This file is the application's main JavaScript file. It is listed as a dependency in run.js and will automatically

@@ -5,46 +5,55 @@
  */
 
 var profile = {
-	// Resource tags are functions that provide hints to the build system about the way files should be processed.
-	// Each of these functions is called once for every file in the package directory. The first argument passed to
-	// the function is the filename of the file, and the second argument is the computed AMD module ID of the file.
-	resourceTags: {
-		// Files that contain test code and should be excluded when the `copyTests` build flag exists and is `false`.
-		// It is strongly recommended that the `mini` build flag be used instead of `copyTests`. Therefore, no files
-		// are marked with the `test` tag here.
-		test: function (filename, mid) {
-			return false;
-		},
+    // Resource tags are functions that provide hints to the build system about the way files should be processed.
+    // Each of these functions is called once for every file in the package directory. The first argument passed to
+    // the function is the filename of the file, and the second argument is the computed AMD module ID of the file.
+    resourceTags: {
+        // Files that contain test code and should be excluded when the `copyTests` build flag exists and is `false`.
+        // It is strongly recommended that the `mini` build flag be used instead of `copyTests`. Therefore, no files
+        // are marked with the `test` tag here.
+        test: function (filename, mid) {
+            'use strict';
+            return false;
+        },
 
-		// Files that should be copied as-is without being modified by the build system.
-		// All files in the `app/resources` directory that are not CSS files are marked as copy-only, since these files
-		// are typically binaries (images, etc.) and may be corrupted by the build system if it attempts to process
-		// them and naively assumes they are scripts.
-		copyOnly: function (filename, mid) {
-				return (/^app\/resources\//.test(filename) && !/\.css$/.test(filename));
+        // Files that should be copied as-is without being modified by the build system.
+        // All files in the `app/resources` directory that are not CSS files are marked as copy-only, since these files
+        // are typically binaries (images, etc.) and may be corrupted by the build system if it attempts to process
+        // them and naively assumes they are scripts.
+        copyOnly: function (filename, mid) {
+            'use strict';
+            return (/^app\/resources\//.test(filename) && !/\.css$/.test(filename));
 
-		},
+        },
 
-		//If you see 303 errors in dojo build is because your package is missing this line
-		//to state to all html files as declarative
-		declarative: function(filename){
-			return /\.html?$/.test(filename); // tags any .html or .htm files as declarative
-		},
+        //If you see 303 errors in dojo build is because your package is missing this line
+        //to state to all html files as declarative
+        declarative: function (filename) {
+            'use strict';
+            return (/\.html?$/).test(filename); // tags any .html or .htm files as declarative
+        },
 
-		// Files that are AMD modules.
-		// All JavaScript in this package should be AMD modules if you are starting a new project. If you are copying
-		// any legacy scripts from an existing project, those legacy scripts should not be given the `amd` tag.
-		amd: function (filename, mid) {
-			return !this.copyOnly(filename, mid) && /\.js$/.test(filename);
-		},
+        // Files that are AMD modules.
+        // All JavaScript in this package should be AMD modules if you are starting a new project. If you are copying
+        // any legacy scripts from an existing project, those legacy scripts should not be given the `amd` tag.
+        amd: function (filename, mid) {
+            'use strict';
+            return !this.copyOnly(filename, mid) && /\.js$/.test(filename);
+        },
 
-		// Files that should not be copied when the `mini` build flag is set to true.
-		// In this case, we are excluding this package configuration file which is not necessary in a built copy of
-		// the application.
-		miniExclude: function (filename, mid) {
-			return mid in {
-				'app/package': 1
-			};
-		}
-	}
+        // Files that should not be copied when the `mini` build flag is set to true.
+        // In this case, we are excluding this package configuration file which is not necessary in a built copy of
+        // the application.
+        miniExclude: function (filename, mid) {
+            'use strict';
+            var list = {
+                'app/package': true
+            };
+            if (list[mid]) {
+                return true;
+            }
+            return false;
+        }
+    }
 };

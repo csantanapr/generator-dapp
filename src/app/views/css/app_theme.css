@@ -1,6 +1,6 @@
 /* This css file should only contain asthectic rules not layout or structure, they belong in *_layout.css */
 .navPane {
-    border: thin solid yellow;        
+    border: thin solid yellow;
 }
 /* Common between all views in my App */
 .view {

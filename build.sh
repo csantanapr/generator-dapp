@@ -22,7 +22,7 @@ APPCONFIG="$SRCDIR/app/config.json"
 DIST_DIR="$BASEDIR/dist"
 
 # Destination directory for built code
-TMP_BUILD_DIR="$DIST_DIR/build.tmp"
+TMP_BUILD_DIR="$DIST_DIR/.build"
 
 # Destination directory for built code
 DIST_WWW_DIR="$DIST_DIR/www"
@@ -66,28 +66,26 @@ else
 fi
 
 echo "Dojo build done: $TMP_BUILD_DIR"
-
-
-
-
 cd "$BASEDIR"
+
+#Create Distribution
+mkdir -p "$DIST_WWW_DIR"
+
+# Copy Build Report
+cp "$TMP_BUILD_DIR/build-report.txt" "$DIST_WWW_DIR/"
+
 # Copy & and disable debug
 cat "$SRCDIR/index.html" | \
-perl -pe "
-  s/isDebug: 1/isDebug: 0/;                           # Remove isDebug" > "$TMP_BUILD_DIR/index.html"
-#s/\s+/ /g;                                 # Collapse white-space" > "$TMP_BUILD_DIR/index.html"
+perl -pe "s/isDebug: 1/isDebug: 0/; # Remove isDebug" > "$TMP_BUILD_DIR/index.html"
 
+#index.html
+cp -a "$TMP_BUILD_DIR/index.html" "$DIST_WWW_DIR"
 
-
-#Create distribution for mobile development
 
 ##############Copy App stuff###########################
 mkdir -p "$DIST_WWW_DIR/app/nls"
 mkdir -p "$DIST_WWW_DIR/app/views/css"
 mkdir -p "$DIST_WWW_DIR/app/views/images"
-
-#index.html
-cp -a "$TMP_BUILD_DIR/index.html" "$DIST_WWW_DIR"
 
 #css
 cp -a "$TMP_BUILD_DIR/app/views/css/app.css" "$DIST_WWW_DIR/app/views/css/"
