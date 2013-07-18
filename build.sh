@@ -81,7 +81,6 @@ perl -pe "s/isDebug: 1/isDebug: 0/; # Remove isDebug" > "$TMP_BUILD_DIR/index.ht
 #index.html
 cp -a "$TMP_BUILD_DIR/index.html" "$DIST_WWW_DIR"
 
-
 ##############Copy App stuff###########################
 mkdir -p "$DIST_WWW_DIR/app/nls"
 mkdir -p "$DIST_WWW_DIR/app/views/css"
@@ -93,18 +92,15 @@ cp -a "$TMP_BUILD_DIR/app/views/css/app.css" "$DIST_WWW_DIR/app/views/css/"
 #images
 cp -a "$TMP_BUILD_DIR/app/views/images" "$DIST_WWW_DIR/app/views/"
 
-
 #js My App (app/main) layer (contains js, html, and config.json)
-cp -a "$TMP_BUILD_DIR/app/main.js"         "$DIST_WWW_DIR/app/"
-cp -a "$TMP_BUILD_DIR/app/main.js.map"     "$DIST_WWW_DIR/app/"
+cp -af $TMP_BUILD_DIR/app/main.*               $DIST_WWW_DIR/app/
+rm -rf $DIST_WWW_DIR/app/*.consoleStripped.js
 
 
-#nls files (en and es for now)
-# TODO: figure out how to create single layer with all languages
-cp -af $TMP_BUILD_DIR/app/nls/main*.js $DIST_WWW_DIR/app/nls/
+#nls files
+cp -af $TMP_BUILD_DIR/app/nls/main*.js             $DIST_WWW_DIR/app/nls/
 rm -f $DIST_WWW_DIR/app/nls/*.consoleStripped.js
 rm -f $DIST_WWW_DIR/app/nls/*.uncompressed.js
-
 
 ##############Copy View 1 stuff (Optional)####################################
 #Just in case there are static files specific to view1 and not other views1
@@ -112,7 +108,6 @@ rm -f $DIST_WWW_DIR/app/nls/*.uncompressed.js
 mkdir -p "$DIST_WWW_DIR/app/views/view1"
 #images
 cp -a "$TMP_BUILD_DIR/app/views/view1/images" "$DIST_WWW_DIR/app/views/view1/"
-
 
 ##############Copy Dojo stuff###########################
 mkdir -p "$DIST_WWW_DIR/dojo"
@@ -132,7 +127,6 @@ cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/holodark/holodark.css"     "$DIST_WWW_
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/windows/windows.css"       "$DIST_WWW_DIR/dojox/mobile/themes/windows/"
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/custom/custom.css"         "$DIST_WWW_DIR/dojox/mobile/themes/custom/"
 
-
 #images dojo
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/android/images"      "$DIST_WWW_DIR/dojox/mobile/themes/android/"
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/iphone/images"       "$DIST_WWW_DIR/dojox/mobile/themes/iphone/"
@@ -141,10 +135,9 @@ cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/holodark/images"     "$DIST_WWW_DIR/do
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/windows/images"      "$DIST_WWW_DIR/dojox/mobile/themes/windows/"
 cp -a "$TMP_BUILD_DIR/dojox/mobile/themes/custom/images"       "$DIST_WWW_DIR/dojox/mobile/themes/custom/"
 
-
 #js dojo layer
-cp -a "$TMP_BUILD_DIR/dojo/dojo.js"       "$DIST_WWW_DIR/dojo/"
-cp -a "$TMP_BUILD_DIR/dojo/dojo.js.map"   "$DIST_WWW_DIR/dojo/"
+cp -a $TMP_BUILD_DIR/dojo/dojo.js*       $DIST_WWW_DIR/dojo/
+rm -f $DIST_WWW_DIR/dojo/*.consoleStripped.js
 
 
 echo "Copy App distribution done: $DIST_WWW_DIR"
