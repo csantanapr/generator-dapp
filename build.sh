@@ -101,9 +101,9 @@ cp -a "$TMP_BUILD_DIR/app/main.js.map"     "$DIST_WWW_DIR/app/"
 
 #nls files (en and es for now)
 # TODO: figure out how to create single layer with all languages
-cp -a "$TMP_BUILD_DIR/app/nls/main_en-us.js"          "$DIST_WWW_DIR/app/nls"
-cp -a "$TMP_BUILD_DIR/app/nls/main_en-gb.js"          "$DIST_WWW_DIR/app/nls"
-cp -a "$TMP_BUILD_DIR/app/nls/main_es-es.js"          "$DIST_WWW_DIR/app/nls"
+cp -af $TMP_BUILD_DIR/app/nls/main*.js $DIST_WWW_DIR/app/nls/
+rm -f $DIST_WWW_DIR/app/nls/*.consoleStripped.js
+rm -f $DIST_WWW_DIR/app/nls/*.uncompressed.js
 
 
 ##############Copy View 1 stuff (Optional)####################################
