@@ -20,7 +20,7 @@ var profile = {
 
     // nls handling
     //localeList: 'en,en-us,en-gb,es,es-es',
-    localeList: 'ar,ca,cs,da,de,el,en-gb,en,en-us,es,es-es,fi,fi-fi,fr,fr-fr,he,he-il,hu,it,it-it,ja,ja-jp,ko,ko-kr,nl,nl-nl,nb,pl,pt,pt-br,pt-pt,ru,sk,sl,sv,th,tr,zh,zh-tw,zh-cn',
+    localeList: 'ar,ca,cs,da,de,el,en,en-gb,en-us,es,es-es,fi,fi-fi,fr,fr-fr,he,he-il,hu,it,it-it,ja,ja-jp,ko,ko-kr,nl,nl-nl,nb,pl,pt,pt-br,pt-pt,ru,sk,sl,sv,th,tr,zh,zh-tw,zh-cn',
 
 
     // This is the directory within the release directory where built packages will be placed. The release directory
