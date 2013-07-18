@@ -1,0 +1,3 @@
+//>>built
+define("app/nls/main_es",{"app/nls/app_strings":{app_string:"Este texto es al nivel de la Aplicaci\u00f3n en el archivo app/nls/es/app_strings.js",app_template_title:"Plantilla al nivel de Aplicaci\u00f3n",locale_link:"?locale\x3den-us",switch_theme:"Cambia Estilo",custom:"Personalizado"},"app/views/view1/nls/view1_strings":{view1_string:"Este texto es al nivel de la Pagina/Vista en el archivo nls",view1_template_title:"Plantilla al nivel de la Vista"}});
+//@ sourceMappingURL=main_es.js.map
