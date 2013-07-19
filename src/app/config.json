@@ -79,7 +79,8 @@
             //  beforeDeactivate
             //  afterDeactivate
             //  destroy
-            //"controller": "app/views/view1/view1_controller.js",
+            //Optional controller
+            "controller": "app/views/view1/view1Ctrl.js",
             //Optional, overwrites the transition type only for this view
             "transition": "slide",
             //Optional, view level strings they get mixed into global nls object

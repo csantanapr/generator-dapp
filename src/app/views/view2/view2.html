@@ -1,6 +1,7 @@
 <div class="view view2">
     <button onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
                                                 'bubbles':true,
+                                                'cancelable':true,
                                                 'detail':   {
                                                             target: 'view1',
                                                             url: '#view1',
@@ -8,9 +9,17 @@
                                                         }
                                                 }));"
     >
-    Back
+    Back with raw js event.target.dispatchEvent()
     </button>
-    
+
+    <button onclick="App.transitionToView(event.target, {
+                                                            'target': 'view1',
+                                                            'url': '#view1',
+                                                            'transitionDir': -1
+                                                        }, event);">
+    Back with App.transitionToView()
+    </button>
+
     <div>${name}</div>
     <div>${template}</div>
     <div>${nls.app_string}</div>

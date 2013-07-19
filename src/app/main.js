@@ -46,6 +46,9 @@ define([
             // populate has flag on whether html5 history is correctly supported or not
         has.add("html5history", !has("ie") || has("ie") > 9);
 
+        //TODO: Just for debugging this enables built in logging
+        //has.add("app-log-api", true);
+
         myapp = new Application(json.fromJson(config));
 
 

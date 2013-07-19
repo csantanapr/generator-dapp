@@ -13395,6 +13395,86 @@ define(["require", "dojo/when", "dojo/on", "dojo/dom-attr", "dojo/_base/declare"
 });
 
 },
+'app/views/view1/view1Ctrl':function(){
+/*jslint nomen: true */
+/*jshint nomen: true */
+/*global _, define, console */
+define([
+    'dojo/dom',
+    'dojo/dom-class',
+    'dojo/on'
+], function (dom, domClass, on) {
+    'use strict';
+
+    var myevents = [];
+
+
+    return {
+        // view init
+
+        init: function (params) {
+            // summary:
+            //      view life cycle init()
+            console.log("view: init()");
+
+        },
+
+        beforeActivate: function (view, data) {
+            // summary:
+            //      view life cycle beforeActivate()
+            console.log("view: beforeActivate(view,data)");
+        },
+
+        afterActivate: function (view, data) {
+            // summary:
+            //      view life cycle afterActivate()
+
+            var btn = dom.byId("doSomethingOnce");
+            myevents.push(on.once(btn, "click", (this.doSomething).bind(this)));
+
+            console.log("view: afterActivate(view,data)");
+
+        },
+
+        beforeDeactivate: function (view, data) {
+            // summary:
+            //      view life cycle beforeDeactivate()
+            console.log("view: beforeDeactivate(view,data)");
+        },
+
+        afterDeactivate: function (view, data) {
+            // summary:
+            //      view life cycle afterDeactivate()
+            console.log("view: afterDeactivate(view,data)");
+            this.destroy();
+        },
+
+        destroy: function (params) {
+            // summary:
+            //      view life cycle destroy()
+            console.log("view: destory()");
+
+
+
+        },
+        /*****
+         * Custom Code for View Controller
+         *****/
+
+        'magicvalue' : 42,
+
+        doSomething: function (event) {
+            console.log('did something');
+        },
+        _removeEvents: function () {
+            while (myevents.length > 0) {
+
+                myevents.pop().remove();
+            }
+        }
+    };
+});
+},
 'dojo/i18n':function(){
 define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config", "./_base/lang", "./_base/xhr", "./json", "module"],
 	function(dojo, require, has, array, config, lang, xhr, json, module){
@@ -13951,10 +14031,10 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
 });
 
 },
-'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile\",\n        \"dojox/mobile/deviceTheme\",\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    /*\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"modelApp.names\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"params\": {\n                \"data\": \"modelApp.repeatData\"\n            }\n        }\n    },\n    */\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            //\"controller\": \"app/views/view1/view1_controller.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\"dojox/mobile/RoundRectList\",\"dojox/mobile/ListItem\"]\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile\",\n        \"dojox/mobile/deviceTheme\",\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    /*\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"modelApp.names\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"params\": {\n                \"data\": \"modelApp.repeatData\"\n            }\n        }\n    },\n    */\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            //Optional controller\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\"dojox/mobile/RoundRectList\",\"dojox/mobile/ListItem\"]\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
 'url:app/views/app.html':"<div>\n    <div class=\"navPane\" data-app-constraint=\"top\">\n        <select id=\"sel1\" onchange=\"(function changeTheme(){location.replace('?theme='+event.target.value);}())\"> \n            <option value=\"\">${nls.switch_theme}</option>\n            <option value=\"iPhone\">iPhone</option>\n            <option value=\"iPad\">iPad</option>\n            <option value=\"Android\">Android</option>\n            <option value=\"Holodark\">Holodark</option>\n            <option value=\"BlackBerry\">BlackBerry</option>\n            <option value=\"WindowsPhone\">WindowsPhone</option>\n            <option value=\"Custom\">${nls.custom}</option>\n\t    </select>\n        <br>\n        <div>${nls.app_template_title}</div>\n        <div>${nls.app_string}</div>\n    </div>\n\n</div>\n",
-'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n    <div>${nls.view1_template_title}</div>\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n    <div>${nls.view1_string}</div>\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n    </ul>\n\n</div>\n",
-'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back\n    </button>\n    \n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n</div>\n",
+'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n    <div>${nls.view1_template_title}</div>\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n    <div>${nls.view1_string}</div>\n\n\n\n\n    ${magicvalue}\n\n\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-attach-event=\"onClick:doSomething\" data-dojo-props='clickable:true,noArrow:true'>\n        doSomething()\n        </li>\n    </ul>\n\n    <button id=\"doSomethingOnce\">\n     doSomething on.once\n    </button>\n\n\n\n\n</div>\n",
+'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'cancelable':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back with raw js event.target.dispatchEvent()\n    </button>\n\n    <button onclick=\"App.transitionToView(event.target, {\n                                                            'target': 'view1',\n                                                            'url': '#view1',\n                                                            'transitionDir': -1\n                                                        }, event);\">\n    Back with App.transitionToView()\n    </button>\n\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n</div>\n",
 '*now':function(r){r(['dojo/i18n!*preload*app/nls/main*["ar","ca","cs","da","de","el","en","en-gb","en-us","es","es-es","fi","fi-fi","fr","fr-fr","he","he-il","hu","it","it-it","ja","ja-jp","ko","ko-kr","nl","nl-nl","nb","pl","pt","pt-br","pt-pt","ru","sk","sl","sv","th","tr","zh","zh-tw","zh-cn","ROOT"]']);}
 }});
 /*global define, console*/
@@ -14004,6 +14084,9 @@ define([
 
             // populate has flag on whether html5 history is correctly supported or not
         has.add("html5history", !has("ie") || has("ie") > 9);
+
+        //TODO: Just for debugging this enables built in logging
+        //has.add("app-log-api", true);
 
         myapp = new Application(json.fromJson(config));
 
