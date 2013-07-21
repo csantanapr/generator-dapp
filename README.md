@@ -1,11 +1,11 @@
 A Starter Kit for Single Page Apps
 ===
 
-- The DApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework. 
+- The DApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework.
 - It illustrates some basic best practices when working with Single Web Page Apps.
 - Helps you build your App which is some time the most difficult of working with
 - The Single Page App is built to be use on creating a Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
-- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project. 
+- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project.
 
 
 Quick Start
@@ -29,7 +29,7 @@ Node will reward you with much faster builds.
 A brief tour
 ------------
 
-* The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`  
+* The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`
   It's responsible for loading the Dojo loader and the application’s
   bootstrapper with `config.json`
 * The file `build.sh` takes your application files and builds them for
@@ -37,7 +37,7 @@ A brief tour
   build profile at `profiles/app.profile.js` and App config `src/app/config.json` .
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
 * The file `src/app/config.json` its the brain to compose the App and also use to figure out dependencies for Dojo Build
-* The file `src/app/views/css/app.css` contains import statements to load the CSS it's inserted from `src/index.html` 
+* The file `src/app/views/css/app.css` contains import statements to load the CSS it's inserted from `src/index.html`
 * The file `src/app/views/app.js/` is an additional App Controller
 * The file `src/app/views/app.html` contains the App level html template and its specified in `src/app/config.json`
 * The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module compose of css/images/html/js
@@ -57,7 +57,7 @@ About the boilerplate
 - This project started because I always spent a few weeks getting started with a new version of Dojo, and want to give it a try to the MV* DApp Framework to see how it can be improved.
 - This boilerplate is constantly updated to try to reflect the latest and
 greatest features and design patterns for developing Single Page App, but
-it relies heavily on information and contributions from other users. 
+it relies heavily on information and contributions from other users.
 - If you have an idea, suggestion, or problem, please [report
 it](https://github.com/csantanapr/dojo-app-boilerplate/issues) or create a pull
 request! (Please note that you will need to have signed the [Dojo
@@ -85,10 +85,11 @@ Future
   - [BackBoneJS](http://backbonejs.org)
   - [AngularJS](http://angularjs.org)
 
-License
--------
-
+Dual License
+--
 The DApp Boilerplate is licensed under the [same
 terms](https://github.com/dojo/dojo/blob/master/LICENSE) as the Dojo
-Toolkit. Consult the individual projects (see the Useful resources section
-above) for additional licensing information.
+Toolkit.
+
+* [BSD](https://github.com/dojo/dojo/blob/master/LICENSE#L13)
+* [AFLv2.1](https://github.com/dojo/dojo/blob/master/LICENSE#L43)
