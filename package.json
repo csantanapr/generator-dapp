@@ -6,7 +6,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "http": "node http"
+    "server": "node server"
   },
   "repository": {
     "type": "git",
@@ -22,16 +22,19 @@
     "JS"
   ],
   "author": "Carlos Santana",
-  "licenses" : [
+  "licenses": [
     {
-      "type" : "BSD",
-      "url" : "https://github.com/dojo/dojo/blob/master/LICENSE#L13"
+      "type": "BSD",
+      "url": "https://github.com/dojo/dojo/blob/master/LICENSE#L13"
     },
     {
-      "type" : "AFLv2.1",
-      "url" : "https://github.com/dojo/dojo/blob/master/LICENSE#L43"
+      "type": "AFLv2.1",
+      "url": "https://github.com/dojo/dojo/blob/master/LICENSE#L43"
     }
   ],
   "readmeFilename": "README.md",
-  "gitHead": "42324ba004238ef50405faf0bcacba1cdffb08d6"
+  "devDependencies": {
+    "express": "3.x",
+    "connect": "~2.8.4"
+  }
 }
