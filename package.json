@@ -34,7 +34,6 @@
   ],
   "readmeFilename": "README.md",
   "devDependencies": {
-    "express": "3.x",
     "connect": "~2.8.4"
   }
 }
