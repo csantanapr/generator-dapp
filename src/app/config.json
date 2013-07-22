@@ -20,8 +20,9 @@
         "dojox/app/controllers/History",
         "dojox/app/controllers/HistoryHash",
         /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */
-        "dojox/mobile",
+        "dojox/mobile/common",
         "dojox/mobile/deviceTheme",
+        /* For build to include css3/lite query selectorEngine */
         "dojo/selector/lite",
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle

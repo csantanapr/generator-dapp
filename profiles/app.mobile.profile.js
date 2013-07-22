@@ -104,12 +104,12 @@ var profile = {
         'dojo-xhr-factory': 0,
 
         // We are not loading tests in production, so we can get rid of some test sniffing code.
-        'dojo-test-sniff': 0
+        'dojo-test-sniff': 0,
 
 
         //Below features for mobile optimized
-        /*
-        ,"dojo-amd-factory-scan": true,
+
+        "dojo-amd-factory-scan": true,
 
 
         // Other configuration switches that are hardcoded in the source.
@@ -158,6 +158,5 @@ var profile = {
         "highcontrast": false,          // safari always displays background images, even when device in high-contrast mode
         "textarea-needs-help-shrinking": true,
         "css-user-select": "'WebkitUserSelect'"
-        */
     }
 };
