@@ -22,8 +22,7 @@
         /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */
         "dojox/mobile",
         "dojox/mobile/deviceTheme",
-
-
+        "dojo/selector/lite",
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
     "modules": [
@@ -86,7 +85,7 @@
             //Optional, view level strings they get mixed into global nls object
             "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
-            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem"]
+            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem", 'dojox/mobile/Button']
         },
         "view2":{
             //Mandatory for defaultViews

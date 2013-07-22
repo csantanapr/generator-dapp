@@ -1,29 +1,52 @@
 <div class="view view1 mblView">
-    <div>${nls.view1_template_title}</div>
-    <div>${name}</div>
-    <div>${template}</div>
-    <div>${nls.app_string}</div>
-    <div>${nls.view1_string}</div>
+
+    <!-- Access View properties and nls strings without a View Controller -->
+    <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>
+    <div>$ {name} = ${name}</div>
+    <div>$ {template} = ${template}</div>
+    <div>$ {nls.app_string} = ${nls.app_string}</div>
+    <div>$ {nls.view1_string} = ${nls.view1_string}</div>
 
 
+    <!-- Access primitive properties from View Controller -->
+    <!-- As defined on View Controller
+    'aNumber'    : 42,
+    'aString'    : 'aString',
+    'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
+    'aBoolean'   : true,
+    'aNull'      : null,
+    -->
+    <div>$ {aNumber}  = ${aNumber}</div>
+    <div>$ {aString} = ${aString}</div>
+    <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>
+    <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>
+    <div>$ {aBoolean} = ${aBoolean}</div>
+    <div>$ {aNull} = ${aNull}</div>
+    <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>
 
-
-    ${magicvalue}
-
-
+    <!-- Access A different locale -->
     <a href="${nls.locale_link}"> Click to change locale: ${nls.locale_link}</a>
+
+    <!-- Transition to a different view using ListItem 'startTransition' Event -->
     <ul data-dojo-type="dojox/mobile/RoundRectList">
         <li data-dojo-type="dojox/mobile/ListItem" data-dojo-props="clickable:true,target:'view2',url:'#view2'">
             Go to View 2
         </li>
-        <li data-dojo-type="dojox/mobile/ListItem" data-dojo-attach-event="onClick:doSomething" data-dojo-props='clickable:true,noArrow:true'>
+    </ul>
+
+    <!-- Access functions on the View Controller -->
+    <ul data-dojo-type="dojox/mobile/RoundRectList">
+        <!-- Run function from View Controller by assigning ListItem onClick to a function -->
+        <li data-dojo-type="dojox/mobile/Button" data-dojo-attach-event="onClick:doSomething" data-dojo-props='clickable:true,noArrow:true'>
         doSomething()
         </li>
     </ul>
 
+    <!-- View Controller will use id to attach an Event listener on button -->
     <button id="doSomethingOnce">
      doSomething on.once
     </button>
+    <input type="text" />
 
 
 

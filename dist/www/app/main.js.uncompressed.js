@@ -9536,6 +9536,292 @@ define([
 });
 
 },
+'dojo/selector/lite':function(){
+define(["../has", "../_base/kernel"], function(has, dojo){
+"use strict";
+
+var testDiv = document.createElement("div");
+var matchesSelector = testDiv.matchesSelector || testDiv.webkitMatchesSelector || testDiv.mozMatchesSelector || testDiv.msMatchesSelector || testDiv.oMatchesSelector; // IE9, WebKit, Firefox have this, but not Opera yet
+var querySelectorAll = testDiv.querySelectorAll;
+var unionSplit = /([^\s,](?:"(?:\\.|[^"])+"|'(?:\\.|[^'])+'|[^,])*)/g;
+has.add("dom-matches-selector", !!matchesSelector);
+has.add("dom-qsa", !!querySelectorAll); 
+
+// this is a simple query engine. It has handles basic selectors, and for simple
+// common selectors is extremely fast
+var liteEngine = function(selector, root){
+	// summary:
+	//		A small lightweight query selector engine that implements CSS2.1 selectors
+	//		minus pseudo-classes and the sibling combinator, plus CSS3 attribute selectors
+
+	if(combine && selector.indexOf(',') > -1){
+		return combine(selector, root);
+	}
+	// use the root's ownerDocument if provided, otherwise try to use dojo.doc. Note 
+	// that we don't use dojo/_base/window's doc to reduce dependencies, and 
+	// fallback to plain document if dojo.doc hasn't been defined (by dojo/_base/window).
+	// presumably we will have a better way to do this in 2.0 
+	var doc = root ? root.ownerDocument || root : dojo.doc || document, 
+		match = (querySelectorAll ? 
+			/^([\w]*)#([\w\-]+$)|^(\.)([\w\-\*]+$)|^(\w+$)/ : // this one only matches on simple queries where we can beat qSA with specific methods
+			/^([\w]*)#([\w\-]+)(?:\s+(.*))?$|(?:^|(>|.+\s+))([\w\-\*]+)(\S*$)/) // this one matches parts of the query that we can use to speed up manual filtering
+			.exec(selector);
+	root = root || doc;
+	if(match){
+		// fast path regardless of whether or not querySelectorAll exists
+		if(match[2]){
+			// an #id
+			// use dojo.byId if available as it fixes the id retrieval in IE, note that we can't use the dojo namespace in 2.0, but if there is a conditional module use, we will use that
+			var found = dojo.byId ? dojo.byId(match[2], doc) : doc.getElementById(match[2]);
+			if(!found || (match[1] && match[1] != found.tagName.toLowerCase())){
+				// if there is a tag qualifer and it doesn't match, no matches
+				return [];
+			}
+			if(root != doc){
+				// there is a root element, make sure we are a child of it
+				var parent = found;
+				while(parent != root){
+					parent = parent.parentNode;
+					if(!parent){
+						return [];
+					}
+				}
+			}
+			return match[3] ?
+					liteEngine(match[3], found) 
+					: [found];
+		}
+		if(match[3] && root.getElementsByClassName){
+			// a .class
+			return root.getElementsByClassName(match[4]);
+		}
+		var found;
+		if(match[5]){
+			// a tag
+			found = root.getElementsByTagName(match[5]);
+			if(match[4] || match[6]){
+				selector = (match[4] || "") + match[6];
+			}else{
+				// that was the entirety of the query, return results
+				return found;
+			}
+		}
+	}
+	if(querySelectorAll){
+		// qSA works strangely on Element-rooted queries
+		// We can work around this by specifying an extra ID on the root
+		// and working up from there (Thanks to Andrew Dupont for the technique)
+		// IE 8 doesn't work on object elements
+		if (root.nodeType === 1 && root.nodeName.toLowerCase() !== "object"){				
+			return useRoot(root, selector, root.querySelectorAll);
+		}else{
+			// we can use the native qSA
+			return root.querySelectorAll(selector);
+		}
+	}else if(!found){
+		// search all children and then filter
+		found = root.getElementsByTagName("*");
+	}
+	// now we filter the nodes that were found using the matchesSelector
+	var results = [];
+	for(var i = 0, l = found.length; i < l; i++){
+		var node = found[i];
+		if(node.nodeType == 1 && jsMatchesSelector(node, selector, root)){
+			// keep the nodes that match the selector
+			results.push(node);
+		}
+	}
+	return results;
+};
+var useRoot = function(context, query, method){
+	// this function creates a temporary id so we can do rooted qSA queries, this is taken from sizzle
+	var oldContext = context,
+		old = context.getAttribute("id"),
+		nid = old || "__dojo__",
+		hasParent = context.parentNode,
+		relativeHierarchySelector = /^\s*[+~]/.test(query);
+
+	if(relativeHierarchySelector && !hasParent){
+		return [];
+	}
+	if(!old){
+		context.setAttribute("id", nid);
+	}else{
+		nid = nid.replace(/'/g, "\\$&");
+	}
+	if(relativeHierarchySelector && hasParent){
+		context = context.parentNode;
+	}
+	var selectors = query.match(unionSplit);
+	for(var i = 0; i < selectors.length; i++){
+		selectors[i] = "[id='" + nid + "'] " + selectors[i];
+	}
+	query = selectors.join(",");
+
+	try{
+		return method.call(context, query);
+	}finally{
+		if(!old){
+			oldContext.removeAttribute("id");
+		}
+	}
+};
+
+if(!has("dom-matches-selector")){
+	var jsMatchesSelector = (function(){
+		// a JS implementation of CSS selector matching, first we start with the various handlers
+		var caseFix = testDiv.tagName == "div" ? "toLowerCase" : "toUpperCase";
+		var selectorTypes = {
+			"": function(tagName){
+				tagName = tagName[caseFix]();
+				return function(node){
+					return node.tagName == tagName;
+				};
+			},
+			".": function(className){
+				var classNameSpaced = ' ' + className + ' ';
+				return function(node){
+					return node.className.indexOf(className) > -1 && (' ' + node.className + ' ').indexOf(classNameSpaced) > -1;
+				};
+			},
+			"#": function(id){
+				return function(node){
+					return node.id == id;
+				};
+			}
+		};
+		var attrComparators = {
+			"^=": function(attrValue, value){
+				return attrValue.indexOf(value) == 0;
+			},
+			"*=": function(attrValue, value){
+				return attrValue.indexOf(value) > -1;
+			},
+			"$=": function(attrValue, value){
+				return attrValue.substring(attrValue.length - value.length, attrValue.length) == value;
+			},
+			"~=": function(attrValue, value){
+				return (' ' + attrValue + ' ').indexOf(' ' + value + ' ') > -1;
+			},
+			"|=": function(attrValue, value){
+				return (attrValue + '-').indexOf(value + '-') == 0;
+			},
+			"=": function(attrValue, value){
+				return attrValue == value;
+			},
+			"": function(attrValue, value){
+				return true;
+			}
+		};
+		function attr(name, value, type){
+			var firstChar = value.charAt(0);
+			if(firstChar == '"' || firstChar == "'"){
+				// it is quoted, remove the quotes
+				value = value.slice(1, -1);
+			}
+			value = value.replace(/\\/g,'');
+			var comparator = attrComparators[type || ""];
+			return function(node){
+				var attrValue = node.getAttribute(name);
+				return attrValue && comparator(attrValue, value);
+			};
+		}
+		function ancestor(matcher){
+			return function(node, root){
+				while((node = node.parentNode) != root){
+					if(matcher(node, root)){
+						return true;
+					}
+				}
+			};
+		}
+		function parent(matcher){
+			return function(node, root){
+				node = node.parentNode;
+				return matcher ? 
+					node != root && matcher(node, root)
+					: node == root;
+			};
+		}
+		var cache = {};
+		function and(matcher, next){
+			return matcher ?
+				function(node, root){
+					return next(node) && matcher(node, root);
+				}
+				: next;
+		}
+		return function(node, selector, root){
+			// this returns true or false based on if the node matches the selector (optionally within the given root)
+			var matcher = cache[selector]; // check to see if we have created a matcher function for the given selector
+			if(!matcher){
+				// create a matcher function for the given selector
+				// parse the selectors
+				if(selector.replace(/(?:\s*([> ])\s*)|(#|\.)?((?:\\.|[\w-])+)|\[\s*([\w-]+)\s*(.?=)?\s*("(?:\\.|[^"])+"|'(?:\\.|[^'])+'|(?:\\.|[^\]])*)\s*\]/g, function(t, combinator, type, value, attrName, attrType, attrValue){
+					if(value){
+						matcher = and(matcher, selectorTypes[type || ""](value.replace(/\\/g, '')));
+					}
+					else if(combinator){
+						matcher = (combinator == " " ? ancestor : parent)(matcher);
+					}
+					else if(attrName){
+						matcher = and(matcher, attr(attrName, attrValue, attrType));
+					}
+					return "";
+				})){
+					throw new Error("Syntax error in query");
+				}
+				if(!matcher){
+					return true;
+				}
+				cache[selector] = matcher;
+			}
+			// now run the matcher function on the node
+			return matcher(node, root);
+		};
+	})();
+}
+if(!has("dom-qsa")){
+	var combine = function(selector, root){
+		// combined queries
+		var selectors = selector.match(unionSplit);
+		var indexed = [];
+		// add all results and keep unique ones, this only runs in IE, so we take advantage 
+		// of known IE features, particularly sourceIndex which is unique and allows us to 
+		// order the results 
+		for(var i = 0; i < selectors.length; i++){
+			selector = new String(selectors[i].replace(/\s*$/,''));
+			selector.indexOf = escape; // keep it from recursively entering combine
+			var results = liteEngine(selector, root);
+			for(var j = 0, l = results.length; j < l; j++){
+				var node = results[j];
+				indexed[node.sourceIndex] = node;
+			}
+		}
+		// now convert from a sparse array to a dense array
+		var totalResults = [];
+		for(i in indexed){
+			totalResults.push(indexed[i]);
+		}
+		return totalResults;
+	};
+}
+
+liteEngine.match = matchesSelector ? function(node, selector, root){
+	if(root && root.nodeType != 9){
+		// doesn't support three args, use rooted id trick
+		return useRoot(root, selector, function(query){
+			return matchesSelector.call(node, query);
+		});
+	}
+	// we have a native matchesSelector, use that
+	return matchesSelector.call(node, selector);
+} : jsMatchesSelector; // otherwise use the JS matches impl
+
+return liteEngine;
+});
+
+},
 'dojox/app/controllers/Load':function(){
 define(["require", "dojo/_base/lang", "dojo/_base/declare", "dojo/on", "dojo/Deferred", "dojo/when", "../Controller"],
 	function(require, lang, declare, on, Deferred, when, Controller, View){
@@ -11265,7 +11551,7 @@ define(["require", "dojo/when", "dojo/on", "dojo/_base/declare", "dojo/_base/lan
 			//		|		name: this.name,
 			//		|		parent: this,
 			//		|		templateString: this.templateString,
-			//		|		template: this.template, 
+			//		|		template: this.template,
 			//		|		controller: this.controller
 			//		|	});
 			//		|	viewObj.start(); // start view
@@ -13398,82 +13684,1689 @@ define(["require", "dojo/when", "dojo/on", "dojo/dom-attr", "dojo/_base/declare"
 'app/views/view1/view1Ctrl':function(){
 /*jslint nomen: true */
 /*jshint nomen: true */
-/*global _, define, console */
+/*global _, define, console, alert */
 define([
-    'dojo/dom',
-    'dojo/dom-class',
-    'dojo/on'
-], function (dom, domClass, on) {
+    'dojo/query!css3',
+    'dojo/on',
+    'dojo/NodeList-manipulate'
+], function (query, on) {
     'use strict';
 
-    var myevents = [];
+    var handles,
+        viewNode,
+        count = 0;
 
 
     return {
-        // view init
 
         init: function (params) {
             // summary:
             //      view life cycle init()
-            console.log("view: init()");
+            console.log(this.name + " view:init()");
+
+            //save the view node in clousure to use as scope for dom manipulatation and query
+            viewNode = this.domNode;
 
         },
 
         beforeActivate: function (view, data) {
             // summary:
             //      view life cycle beforeActivate()
-            console.log("view: beforeActivate(view,data)");
+            console.log(this.name + " view:beforeActivate(view,data)");
         },
 
         afterActivate: function (view, data) {
             // summary:
             //      view life cycle afterActivate()
+            console.log(this.name + " view:afterActivate(view,data)");
 
-            var btn = dom.byId("doSomethingOnce");
-            myevents.push(on.once(btn, "click", (this.doSomething).bind(this)));
-
-            console.log("view: afterActivate(view,data)");
+            //Atach onclick event to fire once
+            on.once(query("#doSomethingOnce", viewNode), "click", this.doSomething);
+            count = 0;
+            // debugger;
+            query('input[type="text"]', viewNode).val("iddle").style("color", "red");
 
         },
 
         beforeDeactivate: function (view, data) {
             // summary:
             //      view life cycle beforeDeactivate()
-            console.log("view: beforeDeactivate(view,data)");
+            console.log(this.name + " view:beforeDeactivate(view,data)");
         },
 
         afterDeactivate: function (view, data) {
             // summary:
             //      view life cycle afterDeactivate()
-            console.log("view: afterDeactivate(view,data)");
-            this.destroy();
+            console.log(this.name + " view:afterDeactivate(view,data)");
         },
 
         destroy: function (params) {
             // summary:
             //      view life cycle destroy()
-            console.log("view: destory()");
-
-
-
+            console.log(this.name + " view:destory()");
         },
         /*****
          * Custom Code for View Controller
          *****/
 
-        'magicvalue' : 42,
+        // JavaScript Primitives
+        'aNumber'    : 42,
+        'aString'    : 'aString',
+        'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
+        'aBoolean'   : true,
+        'aNull'      : null,
 
+        _formatterTmpl : function (value, key) {
+            if (value === "aString") {
+                return this.nls.view1_hello;
+            }
+            if (value === null) {
+                return "null";
+            }
+            return value;
+
+        },
         doSomething: function (event) {
             console.log('did something');
-        },
-        _removeEvents: function () {
-            while (myevents.length > 0) {
-
-                myevents.pop().remove();
-            }
+            query('input[type="text"]', viewNode).val("did something " + count);
+            count = count + 1;
         }
     };
 });
+
+},
+'dojo/NodeList-manipulate':function(){
+define(["./query", "./_base/lang", "./_base/array", "./dom-construct", "./NodeList-dom"], function(dquery, lang, array, construct){
+	// module:
+	//		dojo/NodeList-manipulate
+
+	/*=====
+	return function(){
+		// summary:
+		//		Adds chainable methods to dojo.query() / NodeList instances for manipulating HTML
+		//		and DOM nodes and their properties.
+	};
+	=====*/
+
+	var NodeList = dquery.NodeList;
+
+	//TODO: add a way to parse for widgets in the injected markup?
+
+	function getText(/*DOMNode*/node){
+		// summary:
+		//		recursion method for text() to use. Gets text value for a node.
+		// description:
+		//		Juse uses nodedValue so things like <br/> tags do not end up in
+		//		the text as any sort of line return.
+		var text = "", ch = node.childNodes;
+		for(var i = 0, n; n = ch[i]; i++){
+			//Skip comments.
+			if(n.nodeType != 8){
+				if(n.nodeType == 1){
+					text += getText(n);
+				}else{
+					text += n.nodeValue;
+				}
+			}
+		}
+		return text;
+	}
+
+	function getWrapInsertion(/*DOMNode*/node){
+		// summary:
+		//		finds the innermost element to use for wrap insertion.
+
+		//Make it easy, assume single nesting, no siblings.
+		while(node.childNodes[0] && node.childNodes[0].nodeType == 1){
+			node = node.childNodes[0];
+		}
+		return node; //DOMNode
+	}
+
+	function makeWrapNode(/*DOMNode||String*/html, /*DOMNode*/refNode){
+		// summary:
+		//		convert HTML into nodes if it is not already a node.
+		if(typeof html == "string"){
+			html = construct.toDom(html, (refNode && refNode.ownerDocument));
+			if(html.nodeType == 11){
+				//DocumentFragment cannot handle cloneNode, so choose first child.
+				html = html.childNodes[0];
+			}
+		}else if(html.nodeType == 1 && html.parentNode){
+			//This element is already in the DOM clone it, but not its children.
+			html = html.cloneNode(false);
+		}
+		return html; /*DOMNode*/
+	}
+
+	lang.extend(NodeList, {
+		_placeMultiple: function(/*String||Node||NodeList*/query, /*String*/position){
+			// summary:
+			//		private method for inserting queried nodes into all nodes in this NodeList
+			//		at different positions. Differs from NodeList.place because it will clone
+			//		the nodes in this NodeList if the query matches more than one element.
+			var nl2 = typeof query == "string" || query.nodeType ? dquery(query) : query;
+			var toAdd = [];
+			for(var i = 0; i < nl2.length; i++){
+				//Go backwards in DOM to make dom insertions easier via insertBefore
+				var refNode = nl2[i];
+				var length = this.length;
+				for(var j = length - 1, item; item = this[j]; j--){
+					if(i > 0){
+						//Need to clone the item. This also means
+						//it needs to be added to the current NodeList
+						//so it can also be the target of other chaining operations.
+						item = this._cloneNode(item);
+						toAdd.unshift(item);
+					}
+					if(j == length - 1){
+						construct.place(item, refNode, position);
+					}else{
+						refNode.parentNode.insertBefore(item, refNode);
+					}
+					refNode = item;
+				}
+			}
+
+			if(toAdd.length){
+				//Add the toAdd items to the current NodeList. Build up list of args
+				//to pass to splice.
+				toAdd.unshift(0);
+				toAdd.unshift(this.length - 1);
+				Array.prototype.splice.apply(this, toAdd);
+			}
+
+			return this; // dojo/NodeList
+		},
+
+		innerHTML: function(/*String|DOMNode|NodeList?*/ value){
+			// summary:
+			//		allows setting the innerHTML of each node in the NodeList,
+			//		if there is a value passed in, otherwise, reads the innerHTML value of the first node.
+			// description:
+			//		This method is simpler than the dojo/NodeList.html() method provided by
+			//		`dojo/NodeList-html`. This method just does proper innerHTML insertion of HTML fragments,
+			//		and it allows for the innerHTML to be read for the first node in the node list.
+			//		Since dojo/NodeList-html already took the "html" name, this method is called
+			//		"innerHTML". However, if dojo/NodeList-html has not been loaded yet, this
+			//		module will define an "html" method that can be used instead. Be careful if you
+			//		are working in an environment where it is possible that dojo/NodeList-html could
+			//		have been loaded, since its definition of "html" will take precedence.
+			//		The nodes represented by the value argument will be cloned if more than one
+			//		node is in this NodeList. The nodes in this NodeList are returned in the "set"
+			//		usage of this method, not the HTML that was inserted.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts `<p>Hello World</p>` into both divs:
+			//	|	dojo.query("div").innerHTML("<p>Hello World</p>");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns `<p>Hello Mars</p>`:
+			//	|	var message = dojo.query("div").innerHTML();
+			if(arguments.length){
+				return this.addContent(value, "only"); // dojo/NodeList
+			}else{
+				return this[0].innerHTML; //String
+			}
+		},
+
+		/*=====
+		html: function(value){
+			// summary:
+			//		see the information for "innerHTML". "html" is an alias for "innerHTML", but is
+			//		only defined if dojo/NodeList-html has not been loaded.
+			// description:
+			//		An alias for the "innerHTML" method, but only defined if there is not an existing
+			//		"html" method on dojo/NodeList. Be careful if you are working in an environment
+			//		where it is possible that dojo/NodeList-html could have been loaded, since its
+			//		definition of "html" will take precedence. If you are not sure if dojo/NodeList-html
+			//		could be loaded, use the "innerHTML" method.
+			// value: String|DOMNode|NodeList?
+			//		The HTML fragment to use as innerHTML. If value is not passed, then the innerHTML
+			//		of the first element in this NodeList is returned.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			return; // dojo/NodeList|String
+		},
+		=====*/
+
+		text: function(/*String*/value){
+			// summary:
+			//		allows setting the text value of each node in the NodeList,
+			//		if there is a value passed in, otherwise, returns the text value for all the
+			//		nodes in the NodeList in one string.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts "Hello World" into both divs:
+			//	|	dojo.query("div").text("Hello World");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars <span>today</span></p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns "Hello Mars today":
+			//	|	var message = dojo.query("div").text();
+			// returns:
+			//		if no value is passed, the result is String, the text value of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			if(arguments.length){
+				for(var i = 0, node; node = this[i]; i++){
+					if(node.nodeType == 1){
+						construct.empty(node);
+						node.appendChild(node.ownerDocument.createTextNode(value));
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				var result = "";
+				for(i = 0; node = this[i]; i++){
+					result += getText(node);
+				}
+				return result; //String
+			}
+		},
+
+		val: function(/*String||Array*/value){
+			// summary:
+			//		If a value is passed, allows seting the value property of form elements in this
+			//		NodeList, or properly selecting/checking the right value for radio/checkbox/select
+			//		elements. If no value is passed, the value of the first node in this NodeList
+			//		is returned.
+			// returns:
+			//		if no value is passed, the result is String or an Array, for the value of the
+			//		first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<input type="text" value="foo">
+			//	|	<select multiple>
+			//	|		<option value="red" selected>Red</option>
+			//	|		<option value="blue">Blue</option>
+			//	|		<option value="yellow" selected>Yellow</option>
+			//	|	</select>
+			//		This code gets and sets the values for the form fields above:
+			//	|	dojo.query('[type="text"]').val(); //gets value foo
+			//	|	dojo.query('[type="text"]').val("bar"); //sets the input's value to "bar"
+			// 	|	dojo.query("select").val() //gets array value ["red", "yellow"]
+			// 	|	dojo.query("select").val(["blue", "yellow"]) //Sets the blue and yellow options to selected.
+
+			//Special work for input elements.
+			if(arguments.length){
+				var isArray = lang.isArray(value);
+				for(var index = 0, node; node = this[index]; index++){
+					var name = node.nodeName.toUpperCase();
+					var type = node.type;
+					var newValue = isArray ? value[index] : value;
+
+					if(name == "SELECT"){
+						var opts = node.options;
+						for(var i = 0; i < opts.length; i++){
+							var opt = opts[i];
+							if(node.multiple){
+								opt.selected = (array.indexOf(value, opt.value) != -1);
+							}else{
+								opt.selected = (opt.value == newValue);
+							}
+						}
+					}else if(type == "checkbox" || type == "radio"){
+						node.checked = (node.value == newValue);
+					}else{
+						node.value = newValue;
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				//node already declared above.
+				node = this[0];
+				if(!node || node.nodeType != 1){
+					return undefined;
+				}
+				value = node.value || "";
+				if(node.nodeName.toUpperCase() == "SELECT" && node.multiple){
+					//A multivalued selectbox. Do the pain.
+					value = [];
+					//opts declared above in if block.
+					opts = node.options;
+					//i declared above in if block;
+					for(i = 0; i < opts.length; i++){
+						//opt declared above in if block
+						opt = opts[i];
+						if(opt.selected){
+							value.push(opt.value);
+						}
+					}
+					if(!value.length){
+						value = null;
+					}
+				}
+				return value; //String||Array
+			}
+		},
+
+		append: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		appends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").append("<span>append</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p><span>append</span></div>
+			//	|	<div id="bar"><p>Hello World</p><span>append</span></div>
+			return this.addContent(content, "last"); // dojo/NodeList
+		},
+
+		appendTo: function(/*String*/query){
+			// summary:
+			//		appends nodes in this NodeList to the nodes matched by
+			//		the query passed to appendTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>append</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").appendTo("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars<span>append</span></p>
+			//	|	<p>Hello World<span>append</span></p>
+			return this._placeMultiple(query, "last"); // dojo/NodeList
+		},
+
+		prepend: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		prepends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").prepend("<span>prepend</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><span>prepend</span><p>Hello Mars</p></div>
+			//	|	<div id="bar"><span>prepend</span><p>Hello World</p></div>
+			return this.addContent(content, "first"); // dojo/NodeList
+		},
+
+		prependTo: function(/*String*/query){
+			// summary:
+			//		prepends nodes in this NodeList to the nodes matched by
+			//		the query passed to prependTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>prepend</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").prependTo("p");
+			//		Results in this DOM structure:
+			//	|	<p><span>prepend</span>Hello Mars</p>
+			//	|	<p><span>prepend</span>Hello World</p>
+			return this._placeMultiple(query, "first"); // dojo/NodeList
+		},
+
+		after: function(/*String||Element||NodeList*/content){
+			// summary:
+			//		Places the content after every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").after("<span>after</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p></div><span>after</span>
+			//	|	<div id="bar"><p>Hello World</p></div><span>after</span>
+			return this.addContent(content, "after"); // dojo/NodeList
+		},
+
+		insertAfter: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>after</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertAfter("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars</p><span>after</span>
+			//	|	<p>Hello World</p><span>after</span>
+			return this._placeMultiple(query, "after"); // dojo/NodeList
+		},
+
+		before: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Places the content before every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").before("<span>before</span>");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><div id="foo"><p>Hello Mars</p></div>
+			//	|	<span>before</span><div id="bar"><p>Hello World</p></div>
+			return this.addContent(content, "before"); // dojo/NodeList
+		},
+
+		insertBefore: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>before</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertBefore("p");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><p>Hello Mars</p>
+			//	|	<span>before</span><p>Hello World</p>
+			return this._placeMultiple(query, "before"); // dojo/NodeList
+		},
+
+		/*=====
+		remove: function(simpleFilter){
+			// summary:
+			//		alias for dojo/NodeList's orphan method. Removes elements
+			//		in this list that match the simple filter from their parents
+			//		and returns them as a new NodeList.
+			// simpleFilter: String
+			//		single-expression CSS rule. For example, ".thinger" or
+			//		"#someId[attrName='value']" but not "div > span". In short,
+			//		anything which does not invoke a descent to evaluate but
+			//		can instead be used to test a single node is acceptable.
+
+			return; // dojo/NodeList
+		},
+		=====*/
+		remove: NodeList.prototype.orphan,
+
+		wrap: function(/*String||DOMNode*/html){
+			// summary:
+			//		Wrap each node in the NodeList with html passed to wrap.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<b>one</b>
+			//	|	<b>two</b>
+			//		Running this code:
+			//	|	dojo.query("b").wrap("<div><span></span></div>");
+			//		Results in this DOM structure:
+			//	|	<div><span><b>one</b></span></div>
+			//	|	<div><span><b>two</b></span></div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Now cycle through the elements and do the insertion.
+				for(var i = 0, node; node = this[i]; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+					if(node.parentNode){
+						node.parentNode.replaceChild(clone, node);
+					}
+					//Find deepest element and insert old node in it.
+					var insertion = getWrapInsertion(clone);
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapAll: function(/*String||DOMNode*/html){
+			// summary:
+			//		Insert html where the first node in this NodeList lives, then place all
+			//		nodes in this NodeList as the child of the html.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapAll('<div class="allRed"></div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="allRed">
+			// 	|			<div class="red">Red One</div>
+			// 	|			<div class="red">Red Two</div>
+			// 	|		</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Place the wrap HTML in place of the first node.
+				this[0].parentNode.replaceChild(html, this[0]);
+
+				//Now cycle through the elements and move them inside
+				//the wrap.
+				var insertion = getWrapInsertion(html);
+				for(var i = 0, node; node = this[i]; i++){
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapInner: function(/*String||DOMNode*/html){
+			// summary:
+			//		For each node in the NodeList, wrap all its children with the passed in html.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapInner('<span class="special"></span>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red"><span class="special">Red One</span></div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red"><span class="special">Red Two</span></div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+				for(var i = 0; i < this.length; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+
+					//Need to convert the childNodes to an array since wrapAll modifies the
+					//DOM and can change the live childNodes NodeList.
+					this._wrap(lang._toArray(this[i].childNodes), null, this._NodeListCtor).wrapAll(clone);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceWith: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Replaces each node in ths NodeList with the content passed to replaceWith.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the replacing content.
+			//		Note that the returned nodes have been removed from the DOM.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceWith('<div class="green">Green</div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			content = this._normalize(content, this[0]);
+			for(var i = 0, node; node = this[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceAll: function(/*String*/query){
+			// summary:
+			//		replaces nodes matched by the query passed to replaceAll with the nodes
+			//		in this NodeList.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the matched nodes
+			//		from the query. The nodes currently in this NodeLIst could have
+			//		been cloned, so the returned NodeList will include the cloned nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceAll(".blue");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+			var nl = dquery(query);
+			var content = this._normalize(this, this[0]);
+			for(var i = 0, node; node = nl[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		clone: function(){
+			// summary:
+			//		Clones all the nodes in this NodeList and returns them as a new NodeList.
+			// description:
+			//		Only the DOM nodes are cloned, not any attached event handlers.
+			// returns:
+			//		a cloned set of the original nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").clone().appendTo(".container");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+
+			//TODO: need option to clone events?
+			var ary = [];
+			for(var i = 0; i < this.length; i++){
+				ary.push(this._cloneNode(this[i]));
+			}
+			return this._wrap(ary, this, this._NodeListCtor); // dojo/NodeList
+		}
+	});
+
+	//set up html method if one does not exist
+	if(!NodeList.prototype.html){
+		NodeList.prototype.html = NodeList.prototype.innerHTML;
+	}
+
+	return NodeList;
+});
+
+},
+'dojox/mobile/Button':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/dom-class",
+	"dojo/dom-construct",
+	"dijit/_WidgetBase",
+	"dijit/form/_ButtonMixin",
+	"dijit/form/_FormWidgetMixin",
+	"dojo/has",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/Button"
+	],
+	function(array, declare, domClass, domConstruct, WidgetBase, ButtonMixin, FormWidgetMixin, has, BidiButton){
+
+	var Button = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiButton" : "dojox.mobile.Button", [WidgetBase, FormWidgetMixin, ButtonMixin], {
+		// summary:
+		//		Non-templated BUTTON widget with a thin API wrapper for click 
+		//		events and for setting the label.
+		//
+		//		Buttons can display a label, an icon, or both.
+		//		A label should always be specified (through innerHTML) or the label
+		//		attribute.  It can be hidden via showLabel=false.
+		// example:
+		//	|	<button data-dojo-type="dojox/mobile/Button" onClick="...">Hello world</button>
+
+		// baseClass: String
+		//		The name of the CSS class of this widget.
+		baseClass: "mblButton",
+
+		// _setTypeAttr: [private] Function 
+		//		Overrides the automatic assignment of type to nodes, because it causes
+		//		exception on IE. Instead, the type must be specified as this.type
+		//		when the node is created, as part of the original DOM.
+		_setTypeAttr: null,
+
+		// duration: Number
+		//		The duration of selection, in milliseconds, or -1 for no post-click CSS styling.
+		duration: 1000,
+
+		/*=====
+		// label: String
+		//		The label of the button.
+		label: "",
+		=====*/
+		
+		_onClick: function(e){
+			// tags:
+			//		private
+			var ret = this.inherited(arguments);
+			if(ret && this.duration >= 0){ // if its not a button with a state, then emulate press styles
+				var button = this.focusNode || this.domNode;
+				var newStateClasses = (this.baseClass+' '+this["class"]).split(" ");
+				newStateClasses = array.map(newStateClasses, function(c){ return c+"Selected"; });
+				domClass.add(button, newStateClasses);
+				this.defer(function(){
+					domClass.remove(button, newStateClasses);
+				}, this.duration);
+			}
+			return ret;
+		},
+
+		isFocusable: function(){ 
+			// Override of the method of dijit/_WidgetBase.
+			return false; 
+		},
+
+		buildRendering: function(){
+			if(!this.srcNodeRef){
+				this.srcNodeRef = domConstruct.create("button", {"type": this.type});
+			}else if(this._cv){
+				var n = this.srcNodeRef.firstChild;
+				if(n && n.nodeType === 3){
+					n.nodeValue = this._cv(n.nodeValue);
+				}
+			}
+			this.inherited(arguments);
+			this.focusNode = this.domNode;
+		},
+
+		postCreate: function(){
+			this.inherited(arguments);
+			this.connect(this.domNode, "onclick", "_onClick");
+		},
+
+		_setLabelAttr: function(/*String*/ content){
+			// tags:
+			//		private
+			this.inherited(arguments, [this._cv ? this._cv(content) : content]);
+		}
+	});
+
+	return has("dojo-bidi") ? declare("dojox.mobile.Button", [Button, BidiButton]) : Button;
+});
+
+},
+'dijit/form/_ButtonMixin':function(){
+define([
+	"dojo/_base/declare", // declare
+	"dojo/dom", // dom.setSelectable
+	"dojo/has",
+	"../registry"        // registry.byNode
+], function(declare, dom, has, registry){
+
+	// module:
+	//		dijit/form/_ButtonMixin
+
+	var ButtonMixin = declare("dijit.form._ButtonMixin" + (has("dojo-bidi") ? "_NoBidi" : ""), null, {
+		// summary:
+		//		A mixin to add a thin standard API wrapper to a normal HTML button
+		// description:
+		//		A label should always be specified (through innerHTML) or the label attribute.
+		//
+		//		Attach points:
+		//
+		//		- focusNode (required): this node receives focus
+		//		- valueNode (optional): this node's value gets submitted with FORM elements
+		//		- containerNode (optional): this node gets the innerHTML assignment for label
+		// example:
+		// |	<button data-dojo-type="dijit/form/Button" onClick="...">Hello world</button>
+		// example:
+		// |	var button1 = new Button({label: "hello world", onClick: foo});
+		// |	dojo.body().appendChild(button1.domNode);
+
+		// label: HTML String
+		//		Content to display in button.
+		label: "",
+
+		// type: [const] String
+		//		Type of button (submit, reset, button, checkbox, radio)
+		type: "button",
+
+		__onClick: function(/*Event*/ e){
+			// summary:
+			//		Internal function to divert the real click onto the hidden INPUT that has a native default action associated with it
+			// type:
+			//		private
+			e.stopPropagation();
+			e.preventDefault();
+			if(!this.disabled){
+				// cannot use on.emit since button default actions won't occur
+				this.valueNode.click(e);
+			}
+			return false;
+		},
+
+		_onClick: function(/*Event*/ e){
+			// summary:
+			//		Internal function to handle click actions
+			if(this.disabled){
+				e.stopPropagation();
+				e.preventDefault();
+				return false;
+			}
+			if(this.onClick(e) === false){
+				e.preventDefault();
+			}
+			cancelled = e.defaultPrevented;
+
+			// Signal Form/Dialog to submit/close.  For 2.0, consider removing this code and instead making the Form/Dialog
+			// listen for bubbled click events where evt.target.type == "submit" && !evt.defaultPrevented.
+			if(!cancelled && this.type == "submit" && !(this.valueNode || this.focusNode).form){
+				for(var node = this.domNode; node.parentNode; node = node.parentNode){
+					var widget = registry.byNode(node);
+					if(widget && typeof widget._onSubmit == "function"){
+						widget._onSubmit(e);
+						e.preventDefault(); // action has already occurred
+						cancelled = true;
+						break;
+					}
+				}
+			}
+
+			return !cancelled;
+		},
+
+		postCreate: function(){
+			this.inherited(arguments);
+			dom.setSelectable(this.focusNode, false);
+		},
+
+		onClick: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		Callback for when button is clicked.
+			//		If type="submit", return true to perform submit, or false to cancel it.
+			// type:
+			//		callback
+			return true;		// Boolean
+		},
+
+		_setLabelAttr: function(/*String*/ content){
+			// summary:
+			//		Hook for set('label', ...) to work.
+			// description:
+			//		Set the label (text) of the button; takes an HTML string.
+			this._set("label", content);
+			var labelNode = this.containerNode || this.focusNode;
+			labelNode.innerHTML = content;
+		}
+	});
+
+	if(has("dojo-bidi")){
+		ButtonMixin = declare("dijit.form._ButtonMixin", ButtonMixin, {
+			_setLabelAttr: function(){
+				this.inherited(arguments);
+				var labelNode = this.containerNode || this.focusNode;
+				this.applyTextDir(labelNode);
+			}
+		});
+	}
+
+	return ButtonMixin;
+});
+
+},
+'dijit/form/_FormWidgetMixin':function(){
+define([
+	"dojo/_base/array", // array.forEach
+	"dojo/_base/declare", // declare
+	"dojo/dom-attr", // domAttr.set
+	"dojo/dom-style", // domStyle.get
+	"dojo/_base/lang", // lang.hitch lang.isArray
+	"dojo/mouse", // mouse.isLeft
+	"dojo/on",
+	"dojo/sniff", // has("webkit")
+	"dojo/window", // winUtils.scrollIntoView
+	"../a11y"    // a11y.hasDefaultTabStop
+], function(array, declare, domAttr, domStyle, lang, mouse, on, has, winUtils, a11y){
+
+	// module:
+	//		dijit/form/_FormWidgetMixin
+
+	return declare("dijit.form._FormWidgetMixin", null, {
+		// summary:
+		//		Mixin for widgets corresponding to native HTML elements such as `<checkbox>` or `<button>`,
+		//		which can be children of a `<form>` node or a `dijit/form/Form` widget.
+		//
+		// description:
+		//		Represents a single HTML element.
+		//		All these widgets should have these attributes just like native HTML input elements.
+		//		You can set them during widget construction or afterwards, via `dijit/_WidgetBase.set()`.
+		//
+		//		They also share some common methods.
+
+		// name: [const] String
+		//		Name used when submitting form; same as "name" attribute or plain HTML elements
+		name: "",
+
+		// alt: String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		alt: "",
+
+		// value: String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		value: "",
+
+		// type: [const] String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		type: "text",
+
+		// type: String
+		//		Apply aria-label in markup to the widget's focusNode
+		"aria-label": "focusNode",
+
+		// tabIndex: String
+		//		Order fields are traversed when user hits the tab key
+		tabIndex: "0",
+		_setTabIndexAttr: "focusNode", // force copy even when tabIndex default value, needed since Button is <span>
+
+		// disabled: Boolean
+		//		Should this widget respond to user input?
+		//		In markup, this is specified as "disabled='disabled'", or just "disabled".
+		disabled: false,
+
+		// intermediateChanges: Boolean
+		//		Fires onChange for each value change or only on demand
+		intermediateChanges: false,
+
+		// scrollOnFocus: Boolean
+		//		On focus, should this widget scroll into view?
+		scrollOnFocus: true,
+
+		// Override _WidgetBase mapping id to this.domNode, needs to be on focusNode so <label> etc.
+		// works with screen reader
+		_setIdAttr: "focusNode",
+
+		_setDisabledAttr: function(/*Boolean*/ value){
+			this._set("disabled", value);
+			domAttr.set(this.focusNode, 'disabled', value);
+			if(this.valueNode){
+				domAttr.set(this.valueNode, 'disabled', value);
+			}
+			this.focusNode.setAttribute("aria-disabled", value ? "true" : "false");
+
+			if(value){
+				// reset these, because after the domNode is disabled, we can no longer receive
+				// mouse related events, see #4200
+				this._set("hovering", false);
+				this._set("active", false);
+
+				// clear tab stop(s) on this widget's focusable node(s)  (ComboBox has two focusable nodes)
+				var attachPointNames = "tabIndex" in this.attributeMap ? this.attributeMap.tabIndex :
+					("_setTabIndexAttr" in this) ? this._setTabIndexAttr : "focusNode";
+				array.forEach(lang.isArray(attachPointNames) ? attachPointNames : [attachPointNames], function(attachPointName){
+					var node = this[attachPointName];
+					// complex code because tabIndex=-1 on a <div> doesn't work on FF
+					if(has("webkit") || a11y.hasDefaultTabStop(node)){    // see #11064 about webkit bug
+						node.setAttribute('tabIndex', "-1");
+					}else{
+						node.removeAttribute('tabIndex');
+					}
+				}, this);
+			}else{
+				if(this.tabIndex != ""){
+					this.set('tabIndex', this.tabIndex);
+				}
+			}
+		},
+
+		_onFocus: function(/*String*/ by){
+			// If user clicks on the widget, even if the mouse is released outside of it,
+			// this widget's focusNode should get focus (to mimic native browser behavior).
+			// Browsers often need help to make sure the focus via mouse actually gets to the focusNode.
+			// TODO: consider removing all of this for 2.0 or sooner, see #16622 etc.
+			if(by == "mouse" && this.isFocusable()){
+				// IE exhibits strange scrolling behavior when refocusing a node so only do it when !focused.
+				var focusHandle = this.own(on(this.focusNode, "focus", function(){
+					mouseUpHandle.remove();
+					focusHandle.remove();
+				}))[0];
+				// Set a global event to handle mouseup, so it fires properly
+				// even if the cursor leaves this.domNode before the mouse up event.
+				var mouseUpHandle = this.own(on(this.ownerDocumentBody, "mouseup, touchend", lang.hitch(this, function(evt){
+					mouseUpHandle.remove();
+					focusHandle.remove();
+					// if here, then the mousedown did not focus the focusNode as the default action
+					if(this.focused){
+						if(evt.type == "touchend"){
+							this.defer("focus"); // native focus hasn't occurred yet
+						}else{
+							this.focus(); // native focus already occurred on mousedown
+						}
+					}
+				})))[0];
+			}
+			if(this.scrollOnFocus){
+				this.defer(function(){
+					winUtils.scrollIntoView(this.domNode);
+				}); // without defer, the input caret position can change on mouse click
+			}
+			this.inherited(arguments);
+		},
+
+		isFocusable: function(){
+			// summary:
+			//		Tells if this widget is focusable or not.  Used internally by dijit.
+			// tags:
+			//		protected
+			return !this.disabled && this.focusNode && (domStyle.get(this.domNode, "display") != "none");
+		},
+
+		focus: function(){
+			// summary:
+			//		Put focus on this widget
+			if(!this.disabled && this.focusNode.focus){
+				try{
+					this.focusNode.focus();
+				}catch(e){
+				}
+				/*squelch errors from hidden nodes*/
+			}
+		},
+
+		compare: function(/*anything*/ val1, /*anything*/ val2){
+			// summary:
+			//		Compare 2 values (as returned by get('value') for this widget).
+			// tags:
+			//		protected
+			if(typeof val1 == "number" && typeof val2 == "number"){
+				return (isNaN(val1) && isNaN(val2)) ? 0 : val1 - val2;
+			}else if(val1 > val2){
+				return 1;
+			}else if(val1 < val2){
+				return -1;
+			}else{
+				return 0;
+			}
+		},
+
+		onChange: function(/*===== newValue =====*/){
+			// summary:
+			//		Callback when this widget's value is changed.
+			// tags:
+			//		callback
+		},
+
+		// _onChangeActive: [private] Boolean
+		//		Indicates that changes to the value should call onChange() callback.
+		//		This is false during widget initialization, to avoid calling onChange()
+		//		when the initial value is set.
+		_onChangeActive: false,
+
+		_handleOnChange: function(/*anything*/ newValue, /*Boolean?*/ priorityChange){
+			// summary:
+			//		Called when the value of the widget is set.  Calls onChange() if appropriate
+			// newValue:
+			//		the new value
+			// priorityChange:
+			//		For a slider, for example, dragging the slider is priorityChange==false,
+			//		but on mouse up, it's priorityChange==true.  If intermediateChanges==false,
+			//		onChange is only called form priorityChange=true events.
+			// tags:
+			//		private
+			if(this._lastValueReported == undefined && (priorityChange === null || !this._onChangeActive)){
+				// this block executes not for a change, but during initialization,
+				// and is used to store away the original value (or for ToggleButton, the original checked state)
+				this._resetValue = this._lastValueReported = newValue;
+			}
+			this._pendingOnChange = this._pendingOnChange
+				|| (typeof newValue != typeof this._lastValueReported)
+				|| (this.compare(newValue, this._lastValueReported) != 0);
+			if((this.intermediateChanges || priorityChange || priorityChange === undefined) && this._pendingOnChange){
+				this._lastValueReported = newValue;
+				this._pendingOnChange = false;
+				if(this._onChangeActive){
+					if(this._onChangeHandle){
+						this._onChangeHandle.remove();
+					}
+					// defer allows hidden value processing to run and
+					// also the onChange handler can safely adjust focus, etc
+					this._onChangeHandle = this.defer(
+						function(){
+							this._onChangeHandle = null;
+							this.onChange(newValue);
+						}); // try to collapse multiple onChange's fired faster than can be processed
+				}
+			}
+		},
+
+		create: function(){
+			// Overrides _Widget.create()
+			this.inherited(arguments);
+			this._onChangeActive = true;
+		},
+
+		destroy: function(){
+			if(this._onChangeHandle){ // destroy called before last onChange has fired
+				this._onChangeHandle.remove();
+				this.onChange(this._lastValueReported);
+			}
+			this.inherited(arguments);
+		}
+	});
+});
+
+},
+'dojo/window':function(){
+define(["./_base/lang", "./sniff", "./_base/window", "./dom", "./dom-geometry", "./dom-style", "./dom-construct"],
+	function(lang, has, baseWindow, dom, geom, style, domConstruct){
+
+	// feature detection
+	/* not needed but included here for future reference
+	has.add("rtl-innerVerticalScrollBar-on-left", function(win, doc){
+		var	body = baseWindow.body(doc),
+			scrollable = domConstruct.create('div', {
+				style: {overflow:'scroll', overflowX:'hidden', direction:'rtl', visibility:'hidden', position:'absolute', left:'0', width:'64px', height:'64px'}
+			}, body, "last"),
+			center = domConstruct.create('center', {
+				style: {overflow:'hidden', direction:'ltr'}
+			}, scrollable, "last"),
+			inner = domConstruct.create('div', {
+				style: {overflow:'visible', display:'inline' }
+			}, center, "last");
+		inner.innerHTML="&nbsp;";
+		var midPoint = Math.max(inner.offsetLeft, geom.position(inner).x);
+		var ret = midPoint >= 32;
+		center.removeChild(inner);
+		scrollable.removeChild(center);
+		body.removeChild(scrollable);
+		return ret;
+	});
+	*/
+	has.add("rtl-adjust-position-for-verticalScrollBar", function(win, doc){
+		var	body = baseWindow.body(doc),
+			scrollable = domConstruct.create('div', {
+				style: {overflow:'scroll', overflowX:'visible', direction:'rtl', visibility:'hidden', position:'absolute', left:'0', top:'0', width:'64px', height:'64px'}
+			}, body, "last"),
+			div = domConstruct.create('div', {
+				style: {overflow:'hidden', direction:'ltr'}
+			}, scrollable, "last"),
+			ret = geom.position(div).x != 0;
+		scrollable.removeChild(div);
+		body.removeChild(scrollable);
+		return ret;
+	});
+
+	has.add("position-fixed-support", function(win, doc){
+		// IE6, IE7+quirks, and some older mobile browsers don't support position:fixed
+		var	body = baseWindow.body(doc),
+			outer = domConstruct.create('span', {
+				style: {visibility:'hidden', position:'fixed', left:'1px', top:'1px'}
+			}, body, "last"),
+			inner = domConstruct.create('span', {
+				style: {position:'fixed', left:'0', top:'0'}
+			}, outer, "last"),
+			ret = geom.position(inner).x != geom.position(outer).x;
+		outer.removeChild(inner);
+		body.removeChild(outer);
+		return ret;
+	});
+
+	// module:
+	//		dojo/window
+
+	var window = {
+		// summary:
+		//		TODOC
+
+		getBox: function(/*Document?*/ doc){
+			// summary:
+			//		Returns the dimensions and scroll position of the viewable area of a browser window
+
+			doc = doc || baseWindow.doc;
+
+			var
+				scrollRoot = (doc.compatMode == 'BackCompat') ? baseWindow.body(doc) : doc.documentElement,
+				// get scroll position
+				scroll = geom.docScroll(doc), // scrollRoot.scrollTop/Left should work
+				w, h;
+
+			if(has("touch")){ // if(scrollbars not supported)
+				var uiWindow = window.get(doc);   // use UI window, not dojo.global window
+				// on mobile, scrollRoot.clientHeight <= uiWindow.innerHeight <= scrollRoot.offsetHeight, return uiWindow.innerHeight
+				w = uiWindow.innerWidth || scrollRoot.clientWidth; // || scrollRoot.clientXXX probably never evaluated
+				h = uiWindow.innerHeight || scrollRoot.clientHeight;
+			}else{
+				// on desktops, scrollRoot.clientHeight <= scrollRoot.offsetHeight <= uiWindow.innerHeight, return scrollRoot.clientHeight
+				// uiWindow.innerWidth/Height includes the scrollbar and cannot be used
+				w = scrollRoot.clientWidth;
+				h = scrollRoot.clientHeight;
+			}
+			return {
+				l: scroll.x,
+				t: scroll.y,
+				w: w,
+				h: h
+			};
+		},
+
+		get: function(/*Document*/ doc){
+			// summary:
+			//		Get window object associated with document doc.
+			// doc:
+			//		The document to get the associated window for.
+
+			// In some IE versions (at least 6.0), document.parentWindow does not return a
+			// reference to the real window object (maybe a copy), so we must fix it as well
+			// We use IE specific execScript to attach the real window reference to
+			// document._parentWindow for later use
+			if(has("ie") && window !== document.parentWindow){
+				/*
+				In IE 6, only the variable "window" can be used to connect events (others
+				may be only copies).
+				*/
+				doc.parentWindow.execScript("document._parentWindow = window;", "Javascript");
+				//to prevent memory leak, unset it after use
+				//another possibility is to add an onUnload handler which seems overkill to me (liucougar)
+				var win = doc._parentWindow;
+				doc._parentWindow = null;
+				return win;	//	Window
+			}
+
+			return doc.parentWindow || doc.defaultView;	//	Window
+		},
+
+		scrollIntoView: function(/*DomNode*/ node, /*Object?*/ pos){
+			// summary:
+			//		Scroll the passed node into view using minimal movement, if it is not already.
+
+			// Don't rely on node.scrollIntoView working just because the function is there since
+			// it forces the node to the page's bottom or top (and left or right in IE) without consideration for the minimal movement.
+			// WebKit's node.scrollIntoViewIfNeeded doesn't work either for inner scrollbars in right-to-left mode
+			// and when there's a fixed position scrollable element
+
+			try{ // catch unexpected/unrecreatable errors (#7808) since we can recover using a semi-acceptable native method
+				node = dom.byId(node);
+				var	doc = node.ownerDocument || baseWindow.doc,	// TODO: why baseWindow.doc?  Isn't node.ownerDocument always defined?
+					body = baseWindow.body(doc),
+					html = doc.documentElement || body.parentNode,
+					isIE = has("ie"),
+					isWK = has("webkit");
+				// if an untested browser, then use the native method
+				if(node == body || node == html){ return; }
+				if(!(has("mozilla") || isIE || isWK || has("opera")) && ("scrollIntoView" in node)){
+					node.scrollIntoView(false); // short-circuit to native if possible
+					return;
+				}
+				var	backCompat = doc.compatMode == 'BackCompat',
+					rootWidth = Math.min(body.clientWidth || html.clientWidth, html.clientWidth || body.clientWidth),
+					rootHeight = Math.min(body.clientHeight || html.clientHeight, html.clientHeight || body.clientHeight),
+					scrollRoot = (isWK || backCompat) ? body : html,
+					nodePos = pos || geom.position(node),
+					el = node.parentNode,
+					isFixed = function(el){
+						return (isIE <= 6 || (isIE == 7 && backCompat))
+							? false
+							: (has("position-fixed-support") && (style.get(el, 'position').toLowerCase() == "fixed"));
+					};
+				if(isFixed(node)){ return; } // nothing to do
+				while(el){
+					if(el == body){ el = scrollRoot; }
+					var	elPos = geom.position(el),
+						fixedPos = isFixed(el),
+						rtl = style.getComputedStyle(el).direction.toLowerCase() == "rtl";
+
+					if(el == scrollRoot){
+						elPos.w = rootWidth; elPos.h = rootHeight;
+						if(scrollRoot == html && isIE && rtl){ elPos.x += scrollRoot.offsetWidth-elPos.w; } // IE workaround where scrollbar causes negative x
+						if(elPos.x < 0 || !isIE || isIE >= 9){ elPos.x = 0; } // older IE can have values > 0
+						if(elPos.y < 0 || !isIE || isIE >= 9){ elPos.y = 0; }
+					}else{
+						var pb = geom.getPadBorderExtents(el);
+						elPos.w -= pb.w; elPos.h -= pb.h; elPos.x += pb.l; elPos.y += pb.t;
+						var clientSize = el.clientWidth,
+							scrollBarSize = elPos.w - clientSize;
+						if(clientSize > 0 && scrollBarSize > 0){
+							if(rtl && has("rtl-adjust-position-for-verticalScrollBar")){
+								elPos.x += scrollBarSize;
+							}
+							elPos.w = clientSize;
+						}
+						clientSize = el.clientHeight;
+						scrollBarSize = elPos.h - clientSize;
+						if(clientSize > 0 && scrollBarSize > 0){
+							elPos.h = clientSize;
+						}
+					}
+					if(fixedPos){ // bounded by viewport, not parents
+						if(elPos.y < 0){
+							elPos.h += elPos.y; elPos.y = 0;
+						}
+						if(elPos.x < 0){
+							elPos.w += elPos.x; elPos.x = 0;
+						}
+						if(elPos.y + elPos.h > rootHeight){
+							elPos.h = rootHeight - elPos.y;
+						}
+						if(elPos.x + elPos.w > rootWidth){
+							elPos.w = rootWidth - elPos.x;
+						}
+					}
+					// calculate overflow in all 4 directions
+					var	l = nodePos.x - elPos.x, // beyond left: < 0
+//						t = nodePos.y - Math.max(elPos.y, 0), // beyond top: < 0
+						t = nodePos.y - elPos.y, // beyond top: < 0
+						r = l + nodePos.w - elPos.w, // beyond right: > 0
+						bot = t + nodePos.h - elPos.h; // beyond bottom: > 0
+					var s, old;
+					if(r * l > 0 && (!!el.scrollLeft || el == scrollRoot || el.scrollWidth > el.offsetHeight)){
+						s = Math[l < 0? "max" : "min"](l, r);
+						if(rtl && ((isIE == 8 && !backCompat) || isIE >= 9)){ s = -s; }
+						old = el.scrollLeft;
+						el.scrollLeft += s;
+						s = el.scrollLeft - old;
+						nodePos.x -= s;
+					}
+					if(bot * t > 0 && (!!el.scrollTop || el == scrollRoot || el.scrollHeight > el.offsetHeight)){
+						s = Math.ceil(Math[t < 0? "max" : "min"](t, bot));
+						old = el.scrollTop;
+						el.scrollTop += s;
+						s = el.scrollTop - old;
+						nodePos.y -= s;
+					}
+					el = (el != scrollRoot) && !fixedPos && el.parentNode;
+				}
+			}catch(error){
+				console.error('scrollIntoView: ' + error);
+				node.scrollIntoView(false);
+			}
+		}
+	};
+
+	 1  && lang.setObject("dojo.window", window);
+
+	return window;
+});
+
+},
+'dijit/a11y':function(){
+define([
+	"dojo/_base/array", // array.forEach array.map
+	"dojo/dom",			// dom.byId
+	"dojo/dom-attr", // domAttr.attr domAttr.has
+	"dojo/dom-style", // domStyle.style
+	"dojo/_base/lang", // lang.mixin()
+	"dojo/sniff", // has("ie")  1 
+	"./main"	// for exporting methods to dijit namespace
+], function(array, dom, domAttr, domStyle, lang, has, dijit){
+
+	// module:
+	//		dijit/a11y
+
+	var a11y = {
+		// summary:
+		//		Accessibility utility functions (keyboard, tab stops, etc.)
+
+		_isElementShown: function(/*Element*/ elem){
+			var s = domStyle.get(elem);
+			return (s.visibility != "hidden")
+				&& (s.visibility != "collapsed")
+				&& (s.display != "none")
+				&& (domAttr.get(elem, "type") != "hidden");
+		},
+
+		hasDefaultTabStop: function(/*Element*/ elem){
+			// summary:
+			//		Tests if element is tab-navigable even without an explicit tabIndex setting
+
+			// No explicit tabIndex setting, need to investigate node type
+			switch(elem.nodeName.toLowerCase()){
+				case "a":
+					// An <a> w/out a tabindex is only navigable if it has an href
+					return domAttr.has(elem, "href");
+				case "area":
+				case "button":
+				case "input":
+				case "object":
+				case "select":
+				case "textarea":
+					// These are navigable by default
+					return true;
+				case "iframe":
+					// If it's an editor <iframe> then it's tab navigable.
+					var body;
+					try{
+						// non-IE
+						var contentDocument = elem.contentDocument;
+						if("designMode" in contentDocument && contentDocument.designMode == "on"){
+							return true;
+						}
+						body = contentDocument.body;
+					}catch(e1){
+						// contentWindow.document isn't accessible within IE7/8
+						// if the iframe.src points to a foreign url and this
+						// page contains an element, that could get focus
+						try{
+							body = elem.contentWindow.document.body;
+						}catch(e2){
+							return false;
+						}
+					}
+					return body && (body.contentEditable == 'true' ||
+						(body.firstChild && body.firstChild.contentEditable == 'true'));
+				default:
+					return elem.contentEditable == 'true';
+			}
+		},
+
+		isTabNavigable: function(/*Element*/ elem){
+			// summary:
+			//		Tests if an element is tab-navigable
+
+			// TODO: convert (and rename method) to return effective tabIndex; will save time in _getTabNavigable()
+			if(domAttr.get(elem, "disabled")){
+				return false;
+			}else if(domAttr.has(elem, "tabIndex")){
+				// Explicit tab index setting
+				return domAttr.get(elem, "tabIndex") >= 0; // boolean
+			}else{
+				// No explicit tabIndex setting, so depends on node type
+				return a11y.hasDefaultTabStop(elem);
+			}
+		},
+
+		_getTabNavigable: function(/*DOMNode*/ root){
+			// summary:
+			//		Finds descendants of the specified root node.
+			// description:
+			//		Finds the following descendants of the specified root node:
+			//
+			//		- the first tab-navigable element in document order
+			//		  without a tabIndex or with tabIndex="0"
+			//		- the last tab-navigable element in document order
+			//		  without a tabIndex or with tabIndex="0"
+			//		- the first element in document order with the lowest
+			//		  positive tabIndex value
+			//		- the last element in document order with the highest
+			//		  positive tabIndex value
+			var first, last, lowest, lowestTabindex, highest, highestTabindex, radioSelected = {};
+
+			function radioName(node){
+				// If this element is part of a radio button group, return the name for that group.
+				return node && node.tagName.toLowerCase() == "input" &&
+					node.type && node.type.toLowerCase() == "radio" &&
+					node.name && node.name.toLowerCase();
+			}
+
+			var shown = a11y._isElementShown, isTabNavigable = a11y.isTabNavigable;
+			var walkTree = function(/*DOMNode*/ parent){
+				for(var child = parent.firstChild; child; child = child.nextSibling){
+					// Skip text elements, hidden elements, and also non-HTML elements (those in custom namespaces) in IE,
+					// since show() invokes getAttribute("type"), which crash on VML nodes in IE.
+					if(child.nodeType != 1 || (has("ie") <= 9 && child.scopeName !== "HTML") || !shown(child)){
+						continue;
+					}
+
+					if(isTabNavigable(child)){
+						var tabindex = +domAttr.get(child, "tabIndex");	// + to convert string --> number
+						if(!domAttr.has(child, "tabIndex") || tabindex == 0){
+							if(!first){
+								first = child;
+							}
+							last = child;
+						}else if(tabindex > 0){
+							if(!lowest || tabindex < lowestTabindex){
+								lowestTabindex = tabindex;
+								lowest = child;
+							}
+							if(!highest || tabindex >= highestTabindex){
+								highestTabindex = tabindex;
+								highest = child;
+							}
+						}
+						var rn = radioName(child);
+						if(domAttr.get(child, "checked") && rn){
+							radioSelected[rn] = child;
+						}
+					}
+					if(child.nodeName.toUpperCase() != 'SELECT'){
+						walkTree(child);
+					}
+				}
+			};
+			if(shown(root)){
+				walkTree(root);
+			}
+			function rs(node){
+				// substitute checked radio button for unchecked one, if there is a checked one with the same name.
+				return radioSelected[radioName(node)] || node;
+			}
+
+			return { first: rs(first), last: rs(last), lowest: rs(lowest), highest: rs(highest) };
+		},
+
+		getFirstInTabbingOrder: function(/*String|DOMNode*/ root, /*Document?*/ doc){
+			// summary:
+			//		Finds the descendant of the specified root node
+			//		that is first in the tabbing order
+			var elems = a11y._getTabNavigable(dom.byId(root, doc));
+			return elems.lowest ? elems.lowest : elems.first; // DomNode
+		},
+
+		getLastInTabbingOrder: function(/*String|DOMNode*/ root, /*Document?*/ doc){
+			// summary:
+			//		Finds the descendant of the specified root node
+			//		that is last in the tabbing order
+			var elems = a11y._getTabNavigable(dom.byId(root, doc));
+			return elems.last ? elems.last : elems.highest; // DomNode
+		}
+	};
+
+	 1  && lang.mixin(dijit, a11y);
+
+	return a11y;
+});
+
 },
 'dojo/i18n':function(){
 define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config", "./_base/lang", "./_base/xhr", "./json", "module"],
@@ -14031,10 +15924,10 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
 });
 
 },
-'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile\",\n        \"dojox/mobile/deviceTheme\",\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    /*\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"modelApp.names\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"params\": {\n                \"data\": \"modelApp.repeatData\"\n            }\n        }\n    },\n    */\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            //Optional controller\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\"dojox/mobile/RoundRectList\",\"dojox/mobile/ListItem\"]\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile\",\n        \"dojox/mobile/deviceTheme\",\n        \"dojo/selector/lite\",\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    /*\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"modelApp.names\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"params\": {\n                \"data\": \"modelApp.repeatData\"\n            }\n        }\n    },\n    */\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            //Optional controller\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\"dojox/mobile/RoundRectList\",\"dojox/mobile/ListItem\", 'dojox/mobile/Button']\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
 'url:app/views/app.html':"<div>\n    <div class=\"navPane\" data-app-constraint=\"top\">\n        <select id=\"sel1\" onchange=\"(function changeTheme(){location.replace('?theme='+event.target.value);}())\"> \n            <option value=\"\">${nls.switch_theme}</option>\n            <option value=\"iPhone\">iPhone</option>\n            <option value=\"iPad\">iPad</option>\n            <option value=\"Android\">Android</option>\n            <option value=\"Holodark\">Holodark</option>\n            <option value=\"BlackBerry\">BlackBerry</option>\n            <option value=\"WindowsPhone\">WindowsPhone</option>\n            <option value=\"Custom\">${nls.custom}</option>\n\t    </select>\n        <br>\n        <div>${nls.app_template_title}</div>\n        <div>${nls.app_string}</div>\n    </div>\n\n</div>\n",
-'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n    <div>${nls.view1_template_title}</div>\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n    <div>${nls.view1_string}</div>\n\n\n\n\n    ${magicvalue}\n\n\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-attach-event=\"onClick:doSomething\" data-dojo-props='clickable:true,noArrow:true'>\n        doSomething()\n        </li>\n    </ul>\n\n    <button id=\"doSomethingOnce\">\n     doSomething on.once\n    </button>\n\n\n\n\n</div>\n",
-'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'cancelable':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back with raw js event.target.dispatchEvent()\n    </button>\n\n    <button onclick=\"App.transitionToView(event.target, {\n                                                            'target': 'view1',\n                                                            'url': '#view1',\n                                                            'transitionDir': -1\n                                                        }, event);\">\n    Back with App.transitionToView()\n    </button>\n\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n</div>\n",
+'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n    <!-- Access View properties and nls strings without a View Controller -->\n    <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n    <div>$ {name} = ${name}</div>\n    <div>$ {template} = ${template}</div>\n    <div>$ {nls.app_string} = ${nls.app_string}</div>\n    <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n    <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n    -->\n    <div>$ {aNumber}  = ${aNumber}</div>\n    <div>$ {aString} = ${aString}</div>\n    <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n    <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n    <div>$ {aBoolean} = ${aBoolean}</div>\n    <div>$ {aNull} = ${aNull}</div>\n    <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n    <!-- Access A different locale -->\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n\n    <!-- Transition to a different view using ListItem 'startTransition' Event -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n    </ul>\n\n    <!-- Access functions on the View Controller -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n        <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\" data-dojo-props='clickable:true,noArrow:true'>\n        doSomething()\n        </li>\n    </ul>\n\n    <!-- View Controller will use id to attach an Event listener on button -->\n    <button id=\"doSomethingOnce\">\n     doSomething on.once\n    </button>\n    <input type=\"text\" />\n\n\n\n\n</div>\n",
+'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'cancelable':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back with raw js event.target.dispatchEvent()\n    </button>\n\n    <button onclick=\"App.transitionToView(event.target, {\n                                                            'target': 'view1',\n                                                            'url': '#view1',\n                                                            'transitionDir': -1\n                                                        }, event);\">\n    Back with App.transitionToView()\n    </button>\n\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n    <input type=\"text\" />\n</div>\n",
 '*now':function(r){r(['dojo/i18n!*preload*app/nls/main*["ar","ca","cs","da","de","el","en","en-gb","en-us","es","es-es","fi","fi-fi","fr","fr-fr","he","he-il","hu","it","it-it","ja","ja-jp","ko","ko-kr","nl","nl-nl","nb","pl","pt","pt-br","pt-pt","ru","sk","sl","sv","th","tr","zh","zh-tw","zh-cn","ROOT"]']);}
 }});
 /*global define, console*/
