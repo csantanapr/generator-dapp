@@ -2,8 +2,10 @@
 /*jshint nomen: true */
 /*global _, define, console, alert */
 define([
+    'dojo/_base/declare',
     'dojo/query!css3',
     'dojo/on',
+    'dojox/mobile/ListItem',
     'dojo/NodeList-manipulate'
     // Load dojo/NodeList-manipulate to get JQuery syntax:
     //  html: function(/*String|DOMNode|NodeList?*/ value)
@@ -23,15 +25,20 @@ define([
     //  wrapInner: function(/*String||DOMNode*/html)
     //  replaceAll: function(/*String*/query)
     //  clone: function()
-], function ($, on) {
+], function (declare, $, on, ListItem) {
     'use strict';
 
     var handles,
         viewNode,
-        count = 0;
+        count = 0,
+        DataListItem = declare(ListItem, {
+            target: "requestItemDetails"
+        });
+
 
 
     return {
+        DataListItem: DataListItem,
 
         init: function (params) {
             // summary:

@@ -17,6 +17,7 @@
     */
     //Optional, but required when not using the parser, and its required by views
     "dependencies": [
+        "dojo/store/Observable",
         "dojox/app/controllers/History",
         "dojox/app/controllers/HistoryHash",
         /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */
@@ -24,6 +25,9 @@
         "dojox/mobile/deviceTheme",
         /* For build to include css3/lite query selectorEngine */
         "dojo/selector/lite",
+        //Need to inlclude dependency for model stores across views
+        "dojo/store/Memory"
+
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
     "modules": [
@@ -37,24 +41,26 @@
         //listens to "app-initLayout,app-layoutVIew,app-resize"
         "dojox/app/controllers/Layout"
     ],
-    /*
     //Optional, App levels stores shared with views
     "stores": {
         "store1":{
             "type": "dojo/store/Memory",
-            "observable": true,
+            //"observable": true,
             "params": { // parameters used to initialize the data store
-                "data": "modelApp.names"
+                "data": "myapp.dataItems"
             }
         },
         "store2":{
-            "type": "dojo/store/JsonRest",
-            "params": {
-                "data": "modelApp.repeatData"
+            "type": "dojo/store/Memory",
+            //"observable": true,
+            "params": { // parameters used to initialize the data store
+                "data": [{"label":"North Carolina", "rightText":"Raleigh"},
+                         {"label":"Virginia",       "rightText":"Richmond"}
+                        ],
+                "idProperty":"label"
             }
         }
     },
-    */
 
     //Optional
     "template": "app/views/app.html",
@@ -86,7 +92,12 @@
             //Optional, view level strings they get mixed into global nls object
             "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
-            "dependencies":["dojox/mobile/RoundRectList","dojox/mobile/ListItem", 'dojox/mobile/Button']
+            "dependencies":[
+                "dojox/mobile/RoundRectList",
+                "dojox/mobile/ListItem",
+                "dojox/mobile/Button",
+                "dojox/mobile/RoundRectStoreList"
+                ]
         },
         "view2":{
             //Mandatory for defaultViews

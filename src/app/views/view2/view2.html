@@ -23,4 +23,18 @@
     <div>${name}</div>
     <div>${template}</div>
     <div>${nls.app_string}</div>
+
+    <!-- Render Data from json data via dojo/store -->
+    <!-- Example loading data from .json file -->
+    <div     data-dojo-type="dojox/mobile/RoundRectStoreList"
+             data-dojo-attach-point="dataItems"
+             data-dojo-props="store: this.loadedStores.store1,
+             stateful: false">
+    </div>
+    <!-- Example loading data from static data in config.json -->
+     <div     data-dojo-type="dojox/mobile/RoundRectStoreList"
+             data-dojo-attach-point="dataItems"
+             data-dojo-props="store: this.loadedStores.store2,
+             stateful: false">
+    </div>
 </div>

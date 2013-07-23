@@ -22,39 +22,33 @@
  * <http://dojotoolkit.org/reference-guide/loader/amd.html>.
  */
 define([
+    'dojo/_base/window',
     'dojo/sniff',
     'require',
     'dojox/app/main',
     'dojox/json/ref',
     'dojo/text!app/config.json',
+    'dojo/text!app/resources/data/items.json',
     //TODO: add all html templates being use in config.json to force them to be included in layer
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
     'dojo/text!app/views/view1/view1.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
-], function (has, require, Application, json, config) {
+], function (win, has, require, Application, json, config, data) {
     'use strict';
-    /**
-     * This main.js file conditionally executes different code depending upon the host environment it is loaded in.
-     * This is an increasingly common pattern when dealing with applications that run in different environments that
-     * require different functionality (i.e. client/server or desktop/tablet/phone).
-     */
-    if (has('host-browser')) {
-        var myapp;
+    win.global.myapp = {};
 
-            // populate has flag on whether html5 history is correctly supported or not
-        has.add("html5history", !has("ie") || has("ie") > 9);
+    // populate has flag on whether html5 history is correctly supported or not
+    has.add("html5history", !has("ie") || has("ie") > 9);
 
-        //TODO: Just for debugging this enables built in logging
-        //has.add("app-log-api", true);
+    //TODO: Just for debugging this enables built in logging
+    //has.add("app-log-api", true);
 
-        myapp = new Application(json.fromJson(config));
+    // setup the data for the memory stores
+    win.global.myapp.dataItems = json.fromJson(data);
 
+    //Start the App
+    win.global.myapp.App = new Application(json.fromJson(config));
 
-
-    } else {
-        // TODO: Eventually, the Boilerplate will actually have a useful server implementation here :)
-        console.log('Hello from the server!');
-    }
 });
