@@ -95,7 +95,8 @@
                 "dojox/mobile/RoundRectList",
                 "dojox/mobile/ListItem",
                 "dojox/mobile/Button",
-                "dojox/mobile/RoundRectStoreList"
+                "dojox/mobile/RoundRectStoreList",
+                "dojox/mobile/TextBox"
             ],
             "stores": {
                 "store3":{
@@ -113,7 +114,11 @@
         "view2":{
             //Mandatory for defaultViews
             "template": "app/views/view2/view2.html",
-             "transition": "slide"
+             "transition": "slide",
+             "dependencies":[
+                "dojox/mobile/Button",
+                "dojox/mobile/RoundRectStoreList"
+            ]
         }
     },
     "has": {

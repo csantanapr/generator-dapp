@@ -1,24 +1,27 @@
 <div class="view view2">
-    <button onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
-                                                'bubbles':true,
-                                                'cancelable':true,
-                                                'detail':   {
-                                                            target: 'view1',
-                                                            url: '#view1',
-                                                            transitionDir: -1
-                                                        }
-                                                }));"
-    >
-    Back with raw js event.target.dispatchEvent()
-    </button>
-
-    <button onclick="App.transitionToView(event.target, {
-                                                            'target': 'view1',
-                                                            'url': '#view1',
-                                                            'transitionDir': -1
-                                                        }, event);">
-    Back with App.transitionToView()
-    </button>
+    <div>
+        <button data-dojo-type="dojox/mobile/Button" onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
+                                                    'bubbles':true,
+                                                    'cancelable':true,
+                                                    'detail':   {
+                                                                target: 'view1',
+                                                                url: '#view1',
+                                                                transitionDir: -1
+                                                            }
+                                                    }));"
+        >
+        &lt;--- Back with raw js event.target.dispatchEvent()
+        </button>
+    </div>
+    <div>
+        <button data-dojo-type="dojox/mobile/Button" onclick="App.transitionToView(event.target, {
+                                                                'target': 'view1',
+                                                                'url': '#view1',
+                                                                'transitionDir': -1
+                                                            }, event);">
+        &lt;--- Back with App.transitionToView()
+        </button>
+    </div>
 
     <div>${name}</div>
     <div>${template}</div>
@@ -26,15 +29,15 @@
 
     <!-- Render Data from json data via dojo/store -->
     <!-- Example loading data from .json file -->
-    <div     data-dojo-type="dojox/mobile/RoundRectStoreList"
+    <ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
              data-dojo-attach-point="dataItems1"
              data-dojo-props="store: this.loadedStores.store1">
-    </div>
+    </ul>
     <!-- Example loading data from static data in config.json -->
-    <div     data-dojo-type="dojox/mobile/RoundRectStoreList"
+    <ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
              data-dojo-attach-point="dataItems2"
              data-dojo-props="store: this.loadedStores.store2">
-    </div>
+    </ul>
 
 
 </div>
