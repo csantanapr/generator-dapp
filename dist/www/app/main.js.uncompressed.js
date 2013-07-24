@@ -1844,6 +1844,196 @@ define([
 });
 
 },
+'dojo/store/Observable':function(){
+define(["../_base/kernel", "../_base/lang", "../when", "../_base/array" /*=====, "./api/Store" =====*/
+], function(kernel, lang, when, array /*=====, Store =====*/){
+
+// module:
+//		dojo/store/Observable
+
+var Observable = function(/*Store*/ store){
+	// summary:
+	//		The Observable store wrapper takes a store and sets an observe method on query()
+	//		results that can be used to monitor results for changes.
+	//
+	// description:
+	//		Observable wraps an existing store so that notifications can be made when a query
+	//		is performed.
+	//
+	// example:
+	//		Create a Memory store that returns an observable query, and then log some
+	//		information about that query.
+	//
+	//	|	var store = Observable(new Memory({
+	//	|		data: [
+	//	|			{id: 1, name: "one", prime: false},
+	//	|			{id: 2, name: "two", even: true, prime: true},
+	//	|			{id: 3, name: "three", prime: true},
+	//	|			{id: 4, name: "four", even: true, prime: false},
+	//	|			{id: 5, name: "five", prime: true}
+	//	|		]
+	//	|	}));
+	//	|	var changes = [], results = store.query({ prime: true });
+	//	|	var observer = results.observe(function(object, previousIndex, newIndex){
+	//	|		changes.push({previousIndex:previousIndex, newIndex:newIndex, object:object});
+	//	|	});
+	//
+	//		See the Observable tests for more information.
+
+	var undef, queryUpdaters = [], revision = 0;
+	// a Comet driven store could directly call notify to notify observers when data has
+	// changed on the backend
+	// create a new instance
+	store = lang.delegate(store);
+	
+	store.notify = function(object, existingId){
+		revision++;
+		var updaters = queryUpdaters.slice();
+		for(var i = 0, l = updaters.length; i < l; i++){
+			updaters[i](object, existingId);
+		}
+	};
+	var originalQuery = store.query;
+	store.query = function(query, options){
+		options = options || {};
+		var results = originalQuery.apply(this, arguments);
+		if(results && results.forEach){
+			var nonPagedOptions = lang.mixin({}, options);
+			delete nonPagedOptions.start;
+			delete nonPagedOptions.count;
+
+			var queryExecutor = store.queryEngine && store.queryEngine(query, nonPagedOptions);
+			var queryRevision = revision;
+			var listeners = [], queryUpdater;
+			results.observe = function(listener, includeObjectUpdates){
+				if(listeners.push(listener) == 1){
+					// first listener was added, create the query checker and updater
+					queryUpdaters.push(queryUpdater = function(changed, existingId){
+						when(results, function(resultsArray){
+							var atEnd = resultsArray.length != options.count;
+							var i, l, listener;
+							if(++queryRevision != revision){
+								throw new Error("Query is out of date, you must observe() the query prior to any data modifications");
+							}
+							var removedObject, removedFrom = -1, insertedInto = -1;
+							if(existingId !== undef){
+								// remove the old one
+								for(i = 0, l = resultsArray.length; i < l; i++){
+									var object = resultsArray[i];
+									if(store.getIdentity(object) == existingId){
+										removedObject = object;
+										removedFrom = i;
+										if(queryExecutor || !changed){// if it was changed and we don't have a queryExecutor, we shouldn't remove it because updated objects would be eliminated
+											resultsArray.splice(i, 1);
+										}
+										break;
+									}
+								}
+							}
+							if(queryExecutor){
+								// add the new one
+								if(changed &&
+										// if a matches function exists, use that (probably more efficient)
+										(queryExecutor.matches ? queryExecutor.matches(changed) : queryExecutor([changed]).length)){
+
+									var firstInsertedInto = removedFrom > -1 ? 
+										removedFrom : // put back in the original slot so it doesn't move unless it needs to (relying on a stable sort below)
+										resultsArray.length;
+									resultsArray.splice(firstInsertedInto, 0, changed); // add the new item
+									insertedInto = array.indexOf(queryExecutor(resultsArray), changed); // sort it
+									// we now need to push the chagne back into the original results array
+									resultsArray.splice(firstInsertedInto, 1); // remove the inserted item from the previous index
+									
+									if((options.start && insertedInto == 0) ||
+										(!atEnd && insertedInto == resultsArray.length)){
+										// if it is at the end of the page, assume it goes into the prev or next page
+										insertedInto = -1;
+									}else{
+										resultsArray.splice(insertedInto, 0, changed); // and insert into the results array with the correct index
+									}
+								}
+							}else if(changed){
+								// we don't have a queryEngine, so we can't provide any information
+								// about where it was inserted or moved to. If it is an update, we leave it's position alone, other we at least indicate a new object
+								if(existingId !== undef){
+									// an update, keep the index the same
+									insertedInto = removedFrom;
+								}else if(!options.start){
+									// a new object
+									insertedInto = store.defaultIndex || 0;
+									resultsArray.splice(insertedInto, 0, changed);
+								}
+							}
+							if((removedFrom > -1 || insertedInto > -1) &&
+									(includeObjectUpdates || !queryExecutor || (removedFrom != insertedInto))){
+								var copyListeners = listeners.slice();
+								for(i = 0;listener = copyListeners[i]; i++){
+									listener(changed || removedObject, removedFrom, insertedInto);
+								}
+							}
+						});
+					});
+				}
+				var handle = {};
+				// TODO: Remove cancel in 2.0.
+				handle.remove = handle.cancel = function(){
+					// remove this listener
+					var index = array.indexOf(listeners, listener);
+					if(index > -1){ // check to make sure we haven't already called cancel
+						listeners.splice(index, 1);
+						if(!listeners.length){
+							// no more listeners, remove the query updater too
+							queryUpdaters.splice(array.indexOf(queryUpdaters, queryUpdater), 1);
+						}
+					}
+				};
+				return handle;
+			};
+		}
+		return results;
+	};
+	var inMethod;
+	function whenFinished(method, action){
+		var original = store[method];
+		if(original){
+			store[method] = function(value){
+				if(inMethod){
+					// if one method calls another (like add() calling put()) we don't want two events
+					return original.apply(this, arguments);
+				}
+				inMethod = true;
+				try{
+					var results = original.apply(this, arguments);
+					when(results, function(results){
+						action((typeof results == "object" && results) || value);
+					});
+					return results;
+				}finally{
+					inMethod = false;
+				}
+			};
+		}
+	}
+	// monitor for updates by listening to these methods
+	whenFinished("put", function(object){
+		store.notify(object, store.getIdentity(object));
+	});
+	whenFinished("add", function(object){
+		store.notify(object);
+	});
+	whenFinished("remove", function(id){
+		store.notify(undefined, id);
+	});
+
+	return store;
+};
+
+lang.setObject("dojo.store.Observable", Observable);
+
+return Observable;
+});
+
+},
 'dojox/app/controllers/History':function(){
 define(["dojo/_base/lang", "dojo/_base/declare", "dojo/on", "../Controller", "../utils/hash", "dojo/topic"],
 function(lang, declare, on, Controller, hash, topic){
@@ -2602,57 +2792,6 @@ define(["./_base/kernel", "require", "./_base/config", "./aspect", "./_base/lang
 
 	return dojo.hash;
 
-});
-
-},
-'dojox/mobile':function(){
-define([
-	".",
-	"dojo/_base/lang",
-	"dojox/mobile/_base"
-], function(dojox, lang, base){
-	lang.getObject("mobile", true, dojox);
-	/*=====
-	return {
-		// summary:
-		//		Deprecated.  Should require dojox/mobile classes directly rather than trying to access them through
-		//		this module.
-	};
-	=====*/
-	return dojox.mobile;
-});
-
-},
-'dojox/mobile/_base':function(){
-define([
-	"./common",
-	"./View",
-	"./Heading",
-	"./RoundRect",
-	"./RoundRectCategory",
-	"./EdgeToEdgeCategory",
-	"./RoundRectList",
-	"./EdgeToEdgeList",
-	"./ListItem",
-	"./Container",
-	"./Pane",
-	"./Switch",
-	"./ToolBarButton",
-	"./ProgressIndicator"
-], function(common, View, Heading, RoundRect, RoundRectCategory, EdgeToEdgeCategory, RoundRectList, EdgeToEdgeList, ListItem, Switch, ToolBarButton, ProgressIndicator){
-	// module:
-	//		dojox/mobile/_base
-
-	/*=====
-	return {
-		// summary:
-		//		Includes the basic dojox/mobile modules: common, View, Heading, 
-		//		RoundRect, RoundRectCategory, EdgeToEdgeCategory, RoundRectList,
-		//		EdgeToEdgeList, ListItem, Container, Pane, Switch, ToolBarButton, 
-		//		and ProgressIndicator.
-	};
-	=====*/
-	return common;
 });
 
 },
@@ -3671,5576 +3810,6 @@ define([
 });
 
 },
-'dojox/mobile/View':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/config",
-	"dojo/_base/connect",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/sniff",
-	"dojo/_base/window",
-	"dojo/_base/Deferred",
-	"dojo/dom",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-geometry",
-	"dojo/dom-style",
-	"dijit/registry",
-	"dijit/_Contained",
-	"dijit/_Container",
-	"dijit/_WidgetBase",
-	"./ViewController", // to load ViewController for you (no direct references)
-	"./common",
-	"./transition",
-	"./viewRegistry",
-	"./_css3"
-], function(array, config, connect, declare, lang, has, win, Deferred, dom, domClass, domConstruct, domGeometry, domStyle, registry, Contained, Container, WidgetBase, ViewController, common, transitDeferred, viewRegistry, css3){
-
-	// module:
-	//		dojox/mobile/View
-
-	var dm = lang.getObject("dojox.mobile", true);
-
-	return declare("dojox.mobile.View", [WidgetBase, Container, Contained], {
-		// summary:
-		//		A widget that represents a view that occupies the full screen
-		// description:
-		//		View is a container widget for any HTML element and/or Dojo widgets.
-		//		As a Dojo widget container it can itself contain View widgets
-		//		forming a set of nested views. A Dojo Mobile application is usually
-		//		made of multiple View widgets and the user can navigate through
-		//		the views back and forth with animated transition effects.
-		//		
-		//		When using several sibling views (direct children of the same
-		//		element), you can use the 'selected' attribute to define whether
-		//		the view should be displayed when the application is launched.
-		//		If no view has selected=true, the first sibling view is displayed
-		//		at startup time.
-
-		// selected: Boolean
-		//		If true, the view is displayed at startup time.
-		selected: false,
-
-		// keepScrollPos: Boolean
-		//		If true, the scroll position is kept when transition occurs between views.
-		keepScrollPos: true,
-
-		// tag: String
-		//		The name of the HTML tag to create as domNode. The default value is "div".
-		tag: "div",
-
-		/* internal properties */
-		baseClass: "mblView",
-
-		constructor: function(/*Object*/params, /*DomNode?*/node){
-			// summary:
-			//		Creates a new instance of the class.
-			// params:
-			//		Contains the parameters.
-			// node:
-			//		The DOM node. If none is specified, it is automatically created. 
-			if(node){
-				dom.byId(node).style.visibility = "hidden";
-			}
-		},
-
-		destroy: function(){
-			viewRegistry.remove(this.id);
-			this.inherited(arguments);
-		},
-
-		buildRendering: function(){
-			if(!this.templateString){
-				// Create root node if it wasn't created by _TemplatedMixin
-				this.domNode = this.containerNode = this.srcNodeRef || domConstruct.create(this.tag);
-			}
-
-			this._animEndHandle = this.connect(this.domNode, css3.name("animationEnd"), "onAnimationEnd");
-			this._animStartHandle = this.connect(this.domNode, css3.name("animationStart"), "onAnimationStart");
-			if(!config['mblCSS3Transition']){
-				this._transEndHandle = this.connect(this.domNode, css3.name("transitionEnd"), "onAnimationEnd");
-			}
-			if(has('mblAndroid3Workaround')){
-				// workaround for the screen flicker issue on Android 3.x/4.0
-				// applying "-webkit-transform-style:preserve-3d" to domNode can avoid
-				// transition animation flicker
-				domStyle.set(this.domNode, css3.name("transformStyle"), "preserve-3d");
-			}
-
-			viewRegistry.add(this);
-			this.inherited(arguments);
-		},
-
-		startup: function(){
-			if(this._started){ return; }
-
-			// Determine which view among the siblings should be visible.
-			// Priority:
-			//	 1. fragment id in the url (ex. #view1,view2)
-			//	 2. this.selected
-			//	 3. the first view
-			if(this._visible === undefined){
-				var views = this.getSiblingViews();
-				var ids = location.hash && location.hash.substring(1).split(/,/);
-				var fragView, selectedView, firstView;
-				array.forEach(views, function(v, i){
-					if(array.indexOf(ids, v.id) !== -1){ fragView = v; }
-					if(i == 0){ firstView = v; }
-					if(v.selected){ selectedView = v; }
-					v._visible = false;
-				}, this);
-				(fragView || selectedView || firstView)._visible = true;
-			}
-			if(this._visible){
-				// The 2nd arg is not to hide its sibling views so that they can be
-				// correctly initialized.
-				this.show(true, true);
-
-				// Defer firing events to let user connect to events just after creation
-				// TODO: revisit this for 2.0
-				this.defer(function(){
-					this.onStartView();
-					connect.publish("/dojox/mobile/startView", [this]);
-				});
-			}
-
-			if(this.domNode.style.visibility != "visible"){ // this check is to avoid screen flickers
-				this.domNode.style.visibility = "visible";
-			}
-
-			// Need to call inherited first - so that child widgets get started
-			// up correctly
-			this.inherited(arguments);
-
-			var parent = this.getParent();
-			if(!parent || !parent.resize){ // top level widget
-				this.resize();
-			}
-
-			if(!this._visible){
-				// hide() should be called last so that child widgets can be
-				// initialized while they are visible.
-				this.hide();
-			}
-		},
-
-		resize: function(){
-			// summary:
-			//		Calls resize() of each child widget.
-			array.forEach(this.getChildren(), function(child){
-				if(child.resize){ child.resize(); }
-			});
-		},
-
-		onStartView: function(){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called only when this view is shown at startup time.
-		},
-
-		onBeforeTransitionIn: function(moveTo, dir, transition, context, method){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called before the arriving transition occurs.
-		},
-
-		onAfterTransitionIn: function(moveTo, dir, transition, context, method){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called after the arriving transition occurs.
-		},
-
-		onBeforeTransitionOut: function(moveTo, dir, transition, context, method){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called before the leaving transition occurs.
-		},
-
-		onAfterTransitionOut: function(moveTo, dir, transition, context, method){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called after the leaving transition occurs.
-		},
-
-		_clearClasses: function(/*DomNode*/node){
-			// summary:
-			//		Clean up the domNode classes that were added while making a transition.
-			// description:
-			//		Remove all the "mbl" prefixed classes except mbl*View.
-			if(!node){ return; }
-			var classes = [];
-			array.forEach(lang.trim(node.className||"").split(/\s+/), function(c){
-				if(c.match(/^mbl\w*View$/) || c.indexOf("mbl") === -1){
-					classes.push(c);
-				}
-			}, this);
-			node.className = classes.join(' ');
-		},
-
-		_fixViewState: function(/*DomNode*/toNode){
-			// summary:
-			//		Sanity check for view transition states.
-			// description:
-			//		Sometimes uninitialization of Views fails after making view transition,
-			//		and that results in failure of subsequent view transitions.
-			//		This function does the uninitialization for all the sibling views.
-			var nodes = this.domNode.parentNode.childNodes;
-			for(var i = 0; i < nodes.length; i++){
-				var n = nodes[i];
-				if(n.nodeType === 1 && domClass.contains(n, "mblView")){
-					this._clearClasses(n);
-				}
-			}
-			this._clearClasses(toNode); // just in case toNode is a sibling of an ancestor.
-			
-			// #16337
-			// Uninitialization may fail to clear _inProgress when multiple
-			// performTransition calls occur in a short duration of time.
-			var toWidget = registry.byNode(toNode);
-			if(toWidget){
-				toWidget._inProgress = false;
-			}
-		},
-
-		convertToId: function(moveTo){
-			if(typeof(moveTo) == "string"){
-				// removes a leading hash mark (#) and params if exists
-				// ex. "#bar&myParam=0003" -> "bar"
-				return moveTo.replace(/^#?([^&?]+).*/, "$1");
-			}
-			return moveTo;
-		},
-
-		_isBookmarkable: function(detail){
-			return detail.moveTo && (config['mblForceBookmarkable'] || detail.moveTo.charAt(0) === '#') && !detail.hashchange;
-		},
-
-		performTransition: function(/*String*/moveTo, /*Number*/transitionDir, /*String*/transition,
-									/*Object|null*/context, /*String|Function*/method /*...*/){
-			// summary:
-			//		Function to perform the various types of view transitions, such as fade, slide, and flip.
-			// moveTo: String
-			//		The id of the transition destination view which resides in
-			//		the current page.
-			//		If the value has a hash sign ('#') before the id
-			//		(e.g. #view1) and the dojo/hash module is loaded by the user
-			//		application, the view transition updates the hash in the
-			//		browser URL so that the user can bookmark the destination
-			//		view. In this case, the user can also use the browser's
-			//		back/forward button to navigate through the views in the
-			//		browser history.
-			//		If null, transitions to a blank view.
-			//		If '#', returns immediately without transition.
-			// transitionDir: Number
-			//		The transition direction. If 1, transition forward. If -1, transition backward.
-			//		For example, the slide transition slides the view from right to left when transitionDir == 1,
-			//		and from left to right when transitionDir == -1.
-			// transition: String
-			//		A type of animated transition effect. You can choose from
-			//		the standard transition types, "slide", "fade", "flip", or
-			//		from the extended transition types, "cover", "coverv",
-			//		"dissolve", "reveal", "revealv", "scaleIn", "scaleOut",
-			//		"slidev", "swirl", "zoomIn", "zoomOut", "cube", and
-			//		"swap". If "none" is specified, transition occurs
-			//		immediately without animation.
-			// context: Object
-			//		The object that the callback function will receive as "this".
-			// method: String|Function
-			//		A callback function that is called when the transition has finished.
-			//		A function reference, or name of a function in context.
-			// tags:
-			//		public
-			//
-			// example:
-			//		Transition backward to a view whose id is "foo" with the slide animation.
-			//	|	performTransition("foo", -1, "slide");
-			//
-			// example:
-			//		Transition forward to a blank view, and then open another page.
-			//	|	performTransition(null, 1, "slide", null, function(){location.href = href;});
-
-			if(this._inProgress){ return; } // transition is in progress
-			this._inProgress = true;
-			
-			// normalize the arg
-			var detail, optArgs;
-			if(moveTo && typeof(moveTo) === "object"){
-				detail = moveTo;
-				optArgs = transitionDir; // array
-			}else{
-				detail = {
-					moveTo: moveTo,
-					transitionDir: transitionDir,
-					transition: transition,
-					context: context,
-					method: method
-				};
-				optArgs = [];
-				for(var i = 5; i < arguments.length; i++){
-					optArgs.push(arguments[i]);
-				}
-			}
-
-			// save the parameters
-			this._detail = detail;
-			this._optArgs = optArgs;
-			this._arguments = [
-				detail.moveTo,
-				detail.transitionDir,
-				detail.transition,
-				detail.context,
-				detail.method
-			];
-
-			if(detail.moveTo === "#"){ return; }
-			var toNode;
-			if(detail.moveTo){
-				toNode = this.convertToId(detail.moveTo);
-			}else{
-				if(!this._dummyNode){
-					this._dummyNode = win.doc.createElement("div");
-					win.body().appendChild(this._dummyNode);
-				}
-				toNode = this._dummyNode;
-			}
-
-			if(this.addTransitionInfo && typeof(detail.moveTo) == "string" && this._isBookmarkable(detail)){
-				this.addTransitionInfo(this.id, detail.moveTo, {transitionDir:detail.transitionDir, transition:detail.transition});
-			}
-
-			var fromNode = this.domNode;
-			var fromTop = fromNode.offsetTop;
-			toNode = this.toNode = dom.byId(toNode);
-			if(!toNode){ console.log("dojox/mobile/View.performTransition: destination view not found: "+detail.moveTo); return; }
-			toNode.style.visibility = "hidden";
-			toNode.style.display = "";
-			this._fixViewState(toNode);
-			var toWidget = registry.byNode(toNode);
-			if(toWidget){
-				// Now that the target view became visible, it's time to run resize()
-				if(config["mblAlwaysResizeOnTransition"] || !toWidget._resized){
-					common.resizeAll(null, toWidget);
-					toWidget._resized = true;
-				}
-
-				if(detail.transition && detail.transition != "none"){
-					// Temporarily add padding to align with the fromNode while transition
-					toWidget._addTransitionPaddingTop(fromTop);
-				}
-
-				toWidget.load && toWidget.load(); // for ContentView
-
-				toWidget.movedFrom = fromNode.id;
-			}
-			if(has('mblAndroidWorkaround') && !config['mblCSS3Transition']
-					&& detail.transition && detail.transition != "none"){
-				// workaround for the screen flicker issue on Android 2.2/2.3
-				// apply "-webkit-transform-style:preserve-3d" to both toNode and fromNode
-				// to make them 3d-transition-ready state just before transition animation
-				domStyle.set(toNode, css3.name("transformStyle"), "preserve-3d");
-				domStyle.set(fromNode, css3.name("transformStyle"), "preserve-3d");
-				// show toNode offscreen to avoid flicker when switching "display" and "visibility" styles
-				domClass.add(toNode, "mblAndroidWorkaround");
-			}
-
-			this.onBeforeTransitionOut.apply(this, this._arguments);
-			connect.publish("/dojox/mobile/beforeTransitionOut", [this].concat(lang._toArray(this._arguments)));
-			if(toWidget){
-				// perform view transition keeping the scroll position
-				if(this.keepScrollPos && !this.getParent()){
-					var scrollTop = win.body().scrollTop || win.doc.documentElement.scrollTop || win.global.pageYOffset || 0;
-					fromNode._scrollTop = scrollTop;
-					var toTop = (detail.transitionDir == 1) ? 0 : (toNode._scrollTop || 0);
-					toNode.style.top = "0px";
-					if(scrollTop > 1 || toTop !== 0){
-						fromNode.style.top = toTop - scrollTop + "px";
-						if(config["mblHideAddressBar"] !== false){
-							this.defer(function(){ // iPhone needs setTimeout (via defer)
-								win.global.scrollTo(0, (toTop || 1));
-							});
-						}
-					}
-				}else{
-					toNode.style.top = "0px";
-				}
-				toWidget.onBeforeTransitionIn.apply(toWidget, this._arguments);
-				connect.publish("/dojox/mobile/beforeTransitionIn", [toWidget].concat(lang._toArray(this._arguments)));
-			}
-			toNode.style.display = "none";
-			toNode.style.visibility = "visible";
-
-			common.fromView = this;
-			common.toView = toWidget;
-
-			this._doTransition(fromNode, toNode, detail.transition, detail.transitionDir);
-		},
-
-		_addTransitionPaddingTop: function(/*String|Integer*/ value){
-			// add padding top to the view in order to get alignment during the transition
-			this.containerNode.style.paddingTop = value + "px";
-		},
-
-		_removeTransitionPaddingTop: function(){
-			// remove padding top from the view after the transition
-			this.containerNode.style.paddingTop = "";
-		},
-
-		_toCls: function(s){
-			// convert from transition name to corresponding class name
-			// ex. "slide" -> "mblSlide"
-			return "mbl"+s.charAt(0).toUpperCase() + s.substring(1);
-		},
-
-		_doTransition: function(fromNode, toNode, transition, transitionDir){
-			var rev = (transitionDir == -1) ? " mblReverse" : "";
-			toNode.style.display = "";
-			if(!transition || transition == "none"){
-				this.domNode.style.display = "none";
-				this.invokeCallback();
-			}else if(config['mblCSS3Transition']){
-				//get dojox/css3/transit first
-				Deferred.when(transitDeferred, lang.hitch(this, function(transit){
-					//follow the style of .mblView.mblIn in View.css
-					//need to set the toNode to absolute position
-					var toPosition = domStyle.get(toNode, "position");
-					domStyle.set(toNode, "position", "absolute");
-					Deferred.when(transit(fromNode, toNode, {transition: transition, reverse: (transitionDir===-1)?true:false}),lang.hitch(this,function(){
-						domStyle.set(toNode, "position", toPosition);
-						// Reset the temporary padding on toNode
-						toNode.style.paddingTop = "";
-						this.invokeCallback();
-					}));
-				}));
-			}else{
-				if(transition.indexOf("cube") != -1){
-					if(has('ipad')){
-						domStyle.set(toNode.parentNode, {webkitPerspective:1600});
-					}else if(has("ios")){
-						domStyle.set(toNode.parentNode, {webkitPerspective:800});
-					}
-				}
-				var s = this._toCls(transition);
-				if(has('mblAndroidWorkaround')){
-					// workaround for the screen flicker issue on Android 2.2
-					// applying transition css classes just after setting toNode.style.display = ""
-					// causes flicker, so wait for a while using setTimeout (via defer)
-					var _this = this;
-					_this.defer(function(){
-						domClass.add(fromNode, s + " mblOut" + rev);
-						domClass.add(toNode, s + " mblIn" + rev);
-						domClass.remove(toNode, "mblAndroidWorkaround"); // remove offscreen style
-						_this.defer(function(){
-							domClass.add(fromNode, "mblTransition");
-							domClass.add(toNode, "mblTransition");
-						}, 30); // 30 = 100 - 70, to make total delay equal to 100ms
-					}, 70); // 70ms is experiential value
-				}else{
-					domClass.add(fromNode, s + " mblOut" + rev);
-					domClass.add(toNode, s + " mblIn" + rev);
-					this.defer(function(){
-						domClass.add(fromNode, "mblTransition");
-						domClass.add(toNode, "mblTransition");
-					}, 100);
-				}
-				// set transform origin
-				var fromOrigin = "50% 50%";
-				var toOrigin = "50% 50%";
-				var scrollTop, posX, posY;
-				if(transition.indexOf("swirl") != -1 || transition.indexOf("zoom") != -1){
-					if(this.keepScrollPos && !this.getParent()){
-						scrollTop = win.body().scrollTop || win.doc.documentElement.scrollTop || win.global.pageYOffset || 0;
-					}else{
-						scrollTop = -domGeometry.position(fromNode, true).y;
-					}
-					posY = win.global.innerHeight / 2 + scrollTop;
-					fromOrigin = "50% " + posY + "px";
-					toOrigin = "50% " + posY + "px";
-				}else if(transition.indexOf("scale") != -1){
-					var viewPos = domGeometry.position(fromNode, true);
-					posX = ((this.clickedPosX !== undefined) ? this.clickedPosX : win.global.innerWidth / 2) - viewPos.x;
-					if(this.keepScrollPos && !this.getParent()){
-						scrollTop = win.body().scrollTop || win.doc.documentElement.scrollTop || win.global.pageYOffset || 0;
-					}else{
-						scrollTop = -viewPos.y;
-					}
-					posY = ((this.clickedPosY !== undefined) ? this.clickedPosY : win.global.innerHeight / 2) + scrollTop;
-					fromOrigin = posX + "px " + posY + "px";
-					toOrigin = posX + "px " + posY + "px";
-				}
-				domStyle.set(fromNode, css3.add({}, {transformOrigin:fromOrigin}));
-				domStyle.set(toNode, css3.add({}, {transformOrigin:toOrigin}));
-			}
-		},
-
-		onAnimationStart: function(e){
-			// summary:
-			//		A handler that is called when transition animation starts.
-		},
-
-		onAnimationEnd: function(e){
-			// summary:
-			//		A handler that is called after transition animation ends.
-			var name = e.animationName || e.target.className;
-			if(name.indexOf("Out") === -1 &&
-				name.indexOf("In") === -1 &&
-				name.indexOf("Shrink") === -1){ return; }
-			var isOut = false;
-			if(domClass.contains(this.domNode, "mblOut")){
-				isOut = true;
-				this.domNode.style.display = "none";
-				domClass.remove(this.domNode, [this._toCls(this._detail.transition), "mblIn", "mblOut", "mblReverse"]);
-			}else{
-				// Reset the temporary padding
-				this._removeTransitionPaddingTop();
-			}
-			domStyle.set(this.domNode, css3.add({}, {transformOrigin:""}));
-			if(name.indexOf("Shrink") !== -1){
-				var li = e.target;
-				li.style.display = "none";
-				domClass.remove(li, "mblCloseContent");
-
-				// If target is placed inside scrollable, need to call onTouchEnd
-				// to adjust scroll position
-				var p = viewRegistry.getEnclosingScrollable(this.domNode);
-				p && p.onTouchEnd();
-			}
-			if(isOut){
-				this.invokeCallback();
-			}
-			this._clearClasses(this.domNode);
-
-			// clear the clicked position
-			this.clickedPosX = this.clickedPosY = undefined;
-
-			if(name.indexOf("Cube") !== -1 &&
-				name.indexOf("In") !== -1 && has("ios")){
-				this.domNode.parentNode.style[css3.name("perspective")] = "";
-			}
-		},
-
-		invokeCallback: function(){
-			// summary:
-			//		A function to be called after performing a transition to
-			//		call a specified callback.
-			this.onAfterTransitionOut.apply(this, this._arguments);
-			connect.publish("/dojox/mobile/afterTransitionOut", [this].concat(this._arguments));
-			var toWidget = registry.byNode(this.toNode);
-			if(toWidget){
-				toWidget.onAfterTransitionIn.apply(toWidget, this._arguments);
-				connect.publish("/dojox/mobile/afterTransitionIn", [toWidget].concat(this._arguments));
-				toWidget.movedFrom = undefined;
-				if(this.setFragIds && this._isBookmarkable(this._detail)){
-					this.setFragIds(toWidget); // setFragIds is defined in bookmarkable.js
-				}
-			}
-			if(has('mblAndroidWorkaround')){
-				// workaround for the screen flicker issue on Android 2.2/2.3
-				// remove "-webkit-transform-style" style after transition finished
-				// to avoid side effects such as input field auto-scrolling issue
-				// use setTimeout (via defer) to avoid flicker in case of ScrollableView
-				this.defer(function(){
-					if(toWidget){ domStyle.set(this.toNode, css3.name("transformStyle"), ""); }
-					domStyle.set(this.domNode, css3.name("transformStyle"), "");
-				});
-			}
-
-			var c = this._detail.context, m = this._detail.method;
-			if(c || m){
-				if(!m){
-					m = c;
-					c = null;
-				}
-				c = c || win.global;
-				if(typeof(m) == "string"){
-					c[m].apply(c, this._optArgs);
-				}else if(typeof(m) == "function"){
-					m.apply(c, this._optArgs);
-				}
-			}
-			this._detail = this._optArgs = this._arguments = undefined;
-			this._inProgress = false;
-		},
-
-		isVisible: function(/*Boolean?*/checkAncestors){
-			// summary:
-			//		Return true if this view is visible
-			// checkAncestors:
-			//		If true, in addition to its own visibility, also checks the
-			//		ancestors visibility to see if the view is actually being
-			//		shown or not.
-			var visible = function(node){
-				return domStyle.get(node, "display") !== "none";
-			};
-			if(checkAncestors){
-				for(var n = this.domNode; n.tagName !== "BODY"; n = n.parentNode){
-					if(!visible(n)){ return false; }
-				}
-				return true;
-			}else{
-				return visible(this.domNode);
-			}
-		},
-
-		getShowingView: function(){
-			// summary:
-			//		Find the currently showing view from my sibling views.
-			// description:
-			//		Note that depending on the ancestor views' visibility,
-			//		the found view may not be actually shown.
-			var nodes = this.domNode.parentNode.childNodes;
-			for(var i = 0; i < nodes.length; i++){
-				var n = nodes[i];
-				if(n.nodeType === 1 && domClass.contains(n, "mblView") && n.style.display !== "none"){
-					return registry.byNode(n);
-				}
-			}
-			return null;
-		},
-
-		getSiblingViews: function(){
-			// summary:
-			//		Returns an array of the sibling views.
-			if(!this.domNode.parentNode){ return [this]; }
-			return array.map(array.filter(this.domNode.parentNode.childNodes,
-				function(n){ return n.nodeType === 1 && domClass.contains(n, "mblView"); }),
-				function(n){ return registry.byNode(n); });
-		},
-
-		show: function(/*Boolean?*/noEvent, /*Boolean?*/doNotHideOthers){
-			// summary:
-			//		Shows this view without a transition animation.
-			var out = this.getShowingView();
-			if(!noEvent){
-				if(out){
-					out.onBeforeTransitionOut(out.id);
-					connect.publish("/dojox/mobile/beforeTransitionOut", [out, out.id]);
-				}
-				this.onBeforeTransitionIn(this.id);
-				connect.publish("/dojox/mobile/beforeTransitionIn", [this, this.id]);
-			}
-
-			if(doNotHideOthers){
-				this.domNode.style.display = "";
-			}else{
-				array.forEach(this.getSiblingViews(), function(v){
-					v.domNode.style.display = (v === this) ? "" : "none";
-				}, this);
-			}
-			this.load && this.load(); // for ContentView
-
-			if(!noEvent){
-				if(out){
-					out.onAfterTransitionOut(out.id);
-					connect.publish("/dojox/mobile/afterTransitionOut", [out, out.id]);
-				}
-				this.onAfterTransitionIn(this.id);
-				connect.publish("/dojox/mobile/afterTransitionIn", [this, this.id]);
-			}
-		},
-
-		hide: function(){
-			// summary:
-			//		Hides this view without a transition animation.
-			this.domNode.style.display = "none";
-		}
-	});
-});
-
-},
-'dijit/_Contained':function(){
-define([
-	"dojo/_base/declare", // declare
-	"./registry"	// registry.getEnclosingWidget(), registry.byNode()
-], function(declare, registry){
-
-	// module:
-	//		dijit/_Contained
-
-	return declare("dijit._Contained", null, {
-		// summary:
-		//		Mixin for widgets that are children of a container widget
-		// example:
-		//	|	// make a basic custom widget that knows about its parents
-		//	|	declare("my.customClass",[dijit._WidgetBase, dijit._Contained],{});
-
-		_getSibling: function(/*String*/ which){
-			// summary:
-			//		Returns next or previous sibling
-			// which:
-			//		Either "next" or "previous"
-			// tags:
-			//		private
-			var node = this.domNode;
-			do{
-				node = node[which+"Sibling"];
-			}while(node && node.nodeType != 1);
-			return node && registry.byNode(node);	// dijit/_WidgetBase
-		},
-
-		getPreviousSibling: function(){
-			// summary:
-			//		Returns null if this is the first child of the parent,
-			//		otherwise returns the next element sibling to the "left".
-
-			return this._getSibling("previous"); // dijit/_WidgetBase
-		},
-
-		getNextSibling: function(){
-			// summary:
-			//		Returns null if this is the last child of the parent,
-			//		otherwise returns the next element sibling to the "right".
-
-			return this._getSibling("next"); // dijit/_WidgetBase
-		},
-
-		getIndexInParent: function(){
-			// summary:
-			//		Returns the index of this widget within its container parent.
-			//		It returns -1 if the parent does not exist, or if the parent
-			//		is not a dijit/_Container
-
-			var p = this.getParent();
-			if(!p || !p.getIndexOfChild){
-				return -1; // int
-			}
-			return p.getIndexOfChild(this); // int
-		}
-	});
-});
-
-},
-'dijit/_Container':function(){
-define([
-	"dojo/_base/array", // array.forEach array.indexOf
-	"dojo/_base/declare", // declare
-	"dojo/dom-construct", // domConstruct.place
-	"dojo/_base/kernel" // kernel.deprecated
-], function(array, declare, domConstruct, kernel){
-
-	// module:
-	//		dijit/_Container
-
-	return declare("dijit._Container", null, {
-		// summary:
-		//		Mixin for widgets that contain HTML and/or a set of widget children.
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			if(!this.containerNode){
-				// All widgets with descendants must set containerNode.
-				// NB: this code doesn't quite work right because for TabContainer it runs before
-				// _TemplatedMixin::buildRendering(), and thus
-				// sets this.containerNode to this.domNode, later to be overridden by the assignment in the template.
-				this.containerNode = this.domNode;
-			}
-		},
-
-		addChild: function(/*dijit/_WidgetBase*/ widget, /*int?*/ insertIndex){
-			// summary:
-			//		Makes the given widget a child of this widget.
-			// description:
-			//		Inserts specified child widget's dom node as a child of this widget's
-			//		container node, and possibly does other processing (such as layout).
-
-			// I want to just call domConstruct.place(widget.domNode, this.containerNode, insertIndex), but the counting
-			// is thrown off by text nodes and comment nodes that show up when constructed by markup.
-			// In the future consider stripping those nodes on construction, either in the parser or this widget code.
-			var refNode = this.containerNode;
-			if(insertIndex > 0){
-				// Old-school way to get nth child; dojo.query would be easier but _Container was weened from dojo.query
-				// in #10087 to minimize download size.   Not sure if that's still and issue with new smaller dojo/query.
-				refNode = refNode.firstChild;
-				while(insertIndex > 0){
-					if(refNode.nodeType == 1){ insertIndex--; }
-					refNode = refNode.nextSibling;
-				}
-				if(refNode){
-					insertIndex = "before";
-				}else{
-					// to support addChild(child, n-1) where there are n children (should add child at end)
-					refNode = this.containerNode;
-					insertIndex = "last";
-				}
-			}
-
-			domConstruct.place(widget.domNode, refNode, insertIndex);
-
-			// If I've been started but the child widget hasn't been started,
-			// start it now.  Make sure to do this after widget has been
-			// inserted into the DOM tree, so it can see that it's being controlled by me,
-			// so it doesn't try to size itself.
-			if(this._started && !widget._started){
-				widget.startup();
-			}
-		},
-
-		removeChild: function(/*Widget|int*/ widget){
-			// summary:
-			//		Removes the passed widget instance from this widget but does
-			//		not destroy it.  You can also pass in an integer indicating
-			//		the index within the container to remove (ie, removeChild(5) removes the sixth widget).
-
-			if(typeof widget == "number"){
-				widget = this.getChildren()[widget];
-			}
-
-			if(widget){
-				var node = widget.domNode;
-				if(node && node.parentNode){
-					node.parentNode.removeChild(node); // detach but don't destroy
-				}
-			}
-		},
-
-		hasChildren: function(){
-			// summary:
-			//		Returns true if widget has child widgets, i.e. if this.containerNode contains widgets.
-			return this.getChildren().length > 0;	// Boolean
-		},
-
-		_getSiblingOfChild: function(/*dijit/_WidgetBase*/ child, /*int*/ dir){
-			// summary:
-			//		Get the next or previous widget sibling of child
-			// dir:
-			//		if 1, get the next sibling
-			//		if -1, get the previous sibling
-			// tags:
-			//		private
-			kernel.deprecated(this.declaredClass+"::_getSiblingOfChild() is deprecated. Use _KeyNavMixin::_getNext() instead.", "", "2.0");
-			var children = this.getChildren(),
-				idx = array.indexOf(children, child);	// int
-			return children[idx + dir];
-		},
-
-		getIndexOfChild: function(/*dijit/_WidgetBase*/ child){
-			// summary:
-			//		Gets the index of the child in this container or -1 if not found
-			return array.indexOf(this.getChildren(), child);	// int
-		}
-	});
-});
-
-},
-'dijit/_WidgetBase':function(){
-define([
-	"require", // require.toUrl
-	"dojo/_base/array", // array.forEach array.map
-	"dojo/aspect",
-	"dojo/_base/config", // config.blankGif
-	"dojo/_base/connect", // connect.connect
-	"dojo/_base/declare", // declare
-	"dojo/dom", // dom.byId
-	"dojo/dom-attr", // domAttr.set domAttr.remove
-	"dojo/dom-class", // domClass.add domClass.replace
-	"dojo/dom-construct", // domConstruct.destroy domConstruct.place
-	"dojo/dom-geometry", // isBodyLtr
-	"dojo/dom-style", // domStyle.set, domStyle.get
-	"dojo/has",
-	"dojo/_base/kernel",
-	"dojo/_base/lang", // mixin(), isArray(), etc.
-	"dojo/on",
-	"dojo/ready",
-	"dojo/Stateful", // Stateful
-	"dojo/topic",
-	"dojo/_base/window", // win.body()
-	"./Destroyable",
-	"dojo/has!dojo-bidi?./_BidiMixin",
-	"./registry"    // registry.getUniqueId(), registry.findWidgets()
-], function(require, array, aspect, config, connect, declare,
-			dom, domAttr, domClass, domConstruct, domGeometry, domStyle, has, kernel,
-			lang, on, ready, Stateful, topic, win, Destroyable, _BidiMixin, registry){
-
-	// module:
-	//		dijit/_WidgetBase
-
-	// Flag to make dijit load modules the app didn't explicitly request, for backwards compatibility
-	has.add("dijit-legacy-requires", !kernel.isAsync);
-
-	// Flag to enable support for textdir attribute
-	has.add("dojo-bidi", false);
-
-
-	// For back-compat, remove in 2.0.
-	if(has("dijit-legacy-requires")){
-		ready(0, function(){
-			var requires = ["dijit/_base/manager"];
-			require(requires);	// use indirection so modules not rolled into a build
-		});
-	}
-
-	// Nested hash listing attributes for each tag, all strings in lowercase.
-	// ex: {"div": {"style": true, "tabindex" true}, "form": { ...
-	var tagAttrs = {};
-
-	function getAttrs(obj){
-		var ret = {};
-		for(var attr in obj){
-			ret[attr.toLowerCase()] = true;
-		}
-		return ret;
-	}
-
-	function nonEmptyAttrToDom(attr){
-		// summary:
-		//		Returns a setter function that copies the attribute to this.domNode,
-		//		or removes the attribute from this.domNode, depending on whether the
-		//		value is defined or not.
-		return function(val){
-			domAttr[val ? "set" : "remove"](this.domNode, attr, val);
-			this._set(attr, val);
-		};
-	}
-
-	var _WidgetBase = declare("dijit._WidgetBase", [Stateful, Destroyable], {
-		// summary:
-		//		Future base class for all Dijit widgets.
-		// description:
-		//		Future base class for all Dijit widgets.
-		//		_Widget extends this class adding support for various features needed by desktop.
-		//
-		//		Provides stubs for widget lifecycle methods for subclasses to extend, like postMixInProperties(), buildRendering(),
-		//		postCreate(), startup(), and destroy(), and also public API methods like set(), get(), and watch().
-		//
-		//		Widgets can provide custom setters/getters for widget attributes, which are called automatically by set(name, value).
-		//		For an attribute XXX, define methods _setXXXAttr() and/or _getXXXAttr().
-		//
-		//		_setXXXAttr can also be a string/hash/array mapping from a widget attribute XXX to the widget's DOMNodes:
-		//
-		//		- DOM node attribute
-		// |		_setFocusAttr: {node: "focusNode", type: "attribute"}
-		// |		_setFocusAttr: "focusNode"	(shorthand)
-		// |		_setFocusAttr: ""		(shorthand, maps to this.domNode)
-		//		Maps this.focus to this.focusNode.focus, or (last example) this.domNode.focus
-		//
-		//		- DOM node innerHTML
-		//	|		_setTitleAttr: { node: "titleNode", type: "innerHTML" }
-		//		Maps this.title to this.titleNode.innerHTML
-		//
-		//		- DOM node innerText
-		//	|		_setTitleAttr: { node: "titleNode", type: "innerText" }
-		//		Maps this.title to this.titleNode.innerText
-		//
-		//		- DOM node CSS class
-		// |		_setMyClassAttr: { node: "domNode", type: "class" }
-		//		Maps this.myClass to this.domNode.className
-		//
-		//		If the value of _setXXXAttr is an array, then each element in the array matches one of the
-		//		formats of the above list.
-		//
-		//		If the custom setter is null, no action is performed other than saving the new value
-		//		in the widget (in this).
-		//
-		//		If no custom setter is defined for an attribute, then it will be copied
-		//		to this.focusNode (if the widget defines a focusNode), or this.domNode otherwise.
-		//		That's only done though for attributes that match DOMNode attributes (title,
-		//		alt, aria-labelledby, etc.)
-
-		// id: [const] String
-		//		A unique, opaque ID string that can be assigned by users or by the
-		//		system. If the developer passes an ID which is known not to be
-		//		unique, the specified ID is ignored and the system-generated ID is
-		//		used instead.
-		id: "",
-		_setIdAttr: "domNode", // to copy to this.domNode even for auto-generated id's
-
-		// lang: [const] String
-		//		Rarely used.  Overrides the default Dojo locale used to render this widget,
-		//		as defined by the [HTML LANG](http://www.w3.org/TR/html401/struct/dirlang.html#adef-lang) attribute.
-		//		Value must be among the list of locales specified during by the Dojo bootstrap,
-		//		formatted according to [RFC 3066](http://www.ietf.org/rfc/rfc3066.txt) (like en-us).
-		lang: "",
-		// set on domNode even when there's a focus node.	but don't set lang="", since that's invalid.
-		_setLangAttr: nonEmptyAttrToDom("lang"),
-
-		// dir: [const] String
-		//		Bi-directional support, as defined by the [HTML DIR](http://www.w3.org/TR/html401/struct/dirlang.html#adef-dir)
-		//		attribute. Either left-to-right "ltr" or right-to-left "rtl".  If undefined, widgets renders in page's
-		//		default direction.
-		dir: "",
-		// set on domNode even when there's a focus node.	but don't set dir="", since that's invalid.
-		_setDirAttr: nonEmptyAttrToDom("dir"), // to set on domNode even when there's a focus node
-
-		// class: String
-		//		HTML class attribute
-		"class": "",
-		_setClassAttr: { node: "domNode", type: "class" },
-
-		// style: String||Object
-		//		HTML style attributes as cssText string or name/value hash
-		style: "",
-
-		// title: String
-		//		HTML title attribute.
-		//
-		//		For form widgets this specifies a tooltip to display when hovering over
-		//		the widget (just like the native HTML title attribute).
-		//
-		//		For TitlePane or for when this widget is a child of a TabContainer, AccordionContainer,
-		//		etc., it's used to specify the tab label, accordion pane title, etc.  In this case it's
-		//		interpreted as HTML.
-		title: "",
-
-		// tooltip: String
-		//		When this widget's title attribute is used to for a tab label, accordion pane title, etc.,
-		//		this specifies the tooltip to appear when the mouse is hovered over that text.
-		tooltip: "",
-
-		// baseClass: [protected] String
-		//		Root CSS class of the widget (ex: dijitTextBox), used to construct CSS classes to indicate
-		//		widget state.
-		baseClass: "",
-
-		// srcNodeRef: [readonly] DomNode
-		//		pointer to original DOM node
-		srcNodeRef: null,
-
-		// domNode: [readonly] DomNode
-		//		This is our visible representation of the widget! Other DOM
-		//		Nodes may by assigned to other properties, usually through the
-		//		template system's data-dojo-attach-point syntax, but the domNode
-		//		property is the canonical "top level" node in widget UI.
-		domNode: null,
-
-		// containerNode: [readonly] DomNode
-		//		Designates where children of the source DOM node will be placed.
-		//		"Children" in this case refers to both DOM nodes and widgets.
-		//		For example, for myWidget:
-		//
-		//		|	<div data-dojo-type=myWidget>
-		//		|		<b> here's a plain DOM node
-		//		|		<span data-dojo-type=subWidget>and a widget</span>
-		//		|		<i> and another plain DOM node </i>
-		//		|	</div>
-		//
-		//		containerNode would point to:
-		//
-		//		|		<b> here's a plain DOM node
-		//		|		<span data-dojo-type=subWidget>and a widget</span>
-		//		|		<i> and another plain DOM node </i>
-		//
-		//		In templated widgets, "containerNode" is set via a
-		//		data-dojo-attach-point assignment.
-		//
-		//		containerNode must be defined for any widget that accepts innerHTML
-		//		(like ContentPane or BorderContainer or even Button), and conversely
-		//		is null for widgets that don't, like TextBox.
-		containerNode: null,
-
-		// ownerDocument: [const] Document?
-		//		The document this widget belongs to.  If not specified to constructor, will default to
-		//		srcNodeRef.ownerDocument, or if no sourceRef specified, then to the document global
-		ownerDocument: null,
-		_setOwnerDocumentAttr: function(val){
-			// this setter is merely to avoid automatically trying to set this.domNode.ownerDocument
-			this._set("ownerDocument", val);
-		},
-
-		/*=====
-		// _started: [readonly] Boolean
-		//		startup() has completed.
-		_started: false,
-		=====*/
-
-		// attributeMap: [protected] Object
-		//		Deprecated.	Instead of attributeMap, widget should have a _setXXXAttr attribute
-		//		for each XXX attribute to be mapped to the DOM.
-		//
-		//		attributeMap sets up a "binding" between attributes (aka properties)
-		//		of the widget and the widget's DOM.
-		//		Changes to widget attributes listed in attributeMap will be
-		//		reflected into the DOM.
-		//
-		//		For example, calling set('title', 'hello')
-		//		on a TitlePane will automatically cause the TitlePane's DOM to update
-		//		with the new title.
-		//
-		//		attributeMap is a hash where the key is an attribute of the widget,
-		//		and the value reflects a binding to a:
-		//
-		//		- DOM node attribute
-		// |		focus: {node: "focusNode", type: "attribute"}
-		//		Maps this.focus to this.focusNode.focus
-		//
-		//		- DOM node innerHTML
-		//	|		title: { node: "titleNode", type: "innerHTML" }
-		//		Maps this.title to this.titleNode.innerHTML
-		//
-		//		- DOM node innerText
-		//	|		title: { node: "titleNode", type: "innerText" }
-		//		Maps this.title to this.titleNode.innerText
-		//
-		//		- DOM node CSS class
-		// |		myClass: { node: "domNode", type: "class" }
-		//		Maps this.myClass to this.domNode.className
-		//
-		//		If the value is an array, then each element in the array matches one of the
-		//		formats of the above list.
-		//
-		//		There are also some shorthands for backwards compatibility:
-		//
-		//		- string --> { node: string, type: "attribute" }, for example:
-		//
-		//	|	"focusNode" ---> { node: "focusNode", type: "attribute" }
-		//
-		//		- "" --> { node: "domNode", type: "attribute" }
-		attributeMap: {},
-
-		// _blankGif: [protected] String
-		//		Path to a blank 1x1 image.
-		//		Used by `<img>` nodes in templates that really get their image via CSS background-image.
-		_blankGif: config.blankGif || require.toUrl("dojo/resources/blank.gif"),
-
-		//////////// INITIALIZATION METHODS ///////////////////////////////////////
-
-		/*=====
-		constructor: function(params, srcNodeRef){
-			// summary:
-			//		Create the widget.
-			// params: Object|null
-			//		Hash of initialization parameters for widget, including scalar values (like title, duration etc.)
-			//		and functions, typically callbacks like onClick.
-			//		The hash can contain any of the widget's properties, excluding read-only properties.
-			// srcNodeRef: DOMNode|String?
-			//		If a srcNodeRef (DOM node) is specified:
-			//
-			//		- use srcNodeRef.innerHTML as my contents
-			//		- if this is a behavioral widget then apply behavior to that srcNodeRef
-			//		- otherwise, replace srcNodeRef with my generated DOM tree
-		},
-		=====*/
-
-		_introspect: function(){
-			// summary:
-			//		Collect metadata about this widget (only once per class, not once per instance):
-			//
-			//			- list of attributes with custom setters, storing in this.constructor._setterAttrs
-			//			- generate this.constructor._onMap, mapping names like "mousedown" to functions like onMouseDown
-
-			var ctor = this.constructor;
-			if(!ctor._setterAttrs){
-				var proto = ctor.prototype,
-					attrs = ctor._setterAttrs = [], // attributes with custom setters
-					onMap = (ctor._onMap = {});
-
-				// Items in this.attributeMap are like custom setters.  For back-compat, remove for 2.0.
-				for(var name in proto.attributeMap){
-					attrs.push(name);
-				}
-
-				// Loop over widget properties, collecting properties with custom setters and filling in ctor._onMap.
-				for(name in proto){
-					if(/^on/.test(name)){
-						onMap[name.substring(2).toLowerCase()] = name;
-					}
-
-					if(/^_set[A-Z](.*)Attr$/.test(name)){
-						name = name.charAt(4).toLowerCase() + name.substr(5, name.length - 9);
-						if(!proto.attributeMap || !(name in proto.attributeMap)){
-							attrs.push(name);
-						}
-					}
-				}
-
-				// Note: this isn't picking up info on properties like aria-label and role, that don't have custom setters
-				// but that set() maps to attributes on this.domNode or this.focusNode
-			}
-		},
-
-		postscript: function(/*Object?*/params, /*DomNode|String*/srcNodeRef){
-			// summary:
-			//		Kicks off widget instantiation.  See create() for details.
-			// tags:
-			//		private
-
-			// Note that we skip calling this.inherited(), i.e. dojo/Stateful::postscript(), because 1.x widgets don't
-			// expect their custom setters to get called until after buildRendering().  Consider changing for 2.0.
-
-			this.create(params, srcNodeRef);
-		},
-
-		create: function(params, srcNodeRef){
-			// summary:
-			//		Kick off the life-cycle of a widget
-			// description:
-			//		Create calls a number of widget methods (postMixInProperties, buildRendering, postCreate,
-			//		etc.), some of which of you'll want to override. See http://dojotoolkit.org/reference-guide/dijit/_WidgetBase.html
-			//		for a discussion of the widget creation lifecycle.
-			//
-			//		Of course, adventurous developers could override create entirely, but this should
-			//		only be done as a last resort.
-			// params: Object|null
-			//		Hash of initialization parameters for widget, including scalar values (like title, duration etc.)
-			//		and functions, typically callbacks like onClick.
-			//		The hash can contain any of the widget's properties, excluding read-only properties.
-			// srcNodeRef: DOMNode|String?
-			//		If a srcNodeRef (DOM node) is specified:
-			//
-			//		- use srcNodeRef.innerHTML as my contents
-			//		- if this is a behavioral widget then apply behavior to that srcNodeRef
-			//		- otherwise, replace srcNodeRef with my generated DOM tree
-			// tags:
-			//		private
-
-			// First time widget is instantiated, scan prototype to figure out info about custom setters etc.
-			this._introspect();
-
-			// store pointer to original DOM tree
-			this.srcNodeRef = dom.byId(srcNodeRef);
-
-			// No longer used, remove for 2.0.
-			this._connects = [];
-			this._supportingWidgets = [];
-
-			// this is here for back-compat, remove in 2.0 (but check NodeList-instantiate.html test)
-			if(this.srcNodeRef && (typeof this.srcNodeRef.id == "string")){
-				this.id = this.srcNodeRef.id;
-			}
-
-			// mix in our passed parameters
-			if(params){
-				this.params = params;
-				lang.mixin(this, params);
-			}
-			this.postMixInProperties();
-
-			// Generate an id for the widget if one wasn't specified, or it was specified as id: undefined.
-			// Do this before buildRendering() because it might expect the id to be there.
-			if(!this.id){
-				this.id = registry.getUniqueId(this.declaredClass.replace(/\./g, "_"));
-				if(this.params){
-					// if params contains {id: undefined}, prevent _applyAttributes() from processing it
-					delete this.params.id;
-				}
-			}
-
-			// The document and <body> node this widget is associated with
-			this.ownerDocument = this.ownerDocument || (this.srcNodeRef ? this.srcNodeRef.ownerDocument : document);
-			this.ownerDocumentBody = win.body(this.ownerDocument);
-
-			registry.add(this);
-
-			this.buildRendering();
-
-			var deleteSrcNodeRef;
-
-			if(this.domNode){
-				// Copy attributes listed in attributeMap into the [newly created] DOM for the widget.
-				// Also calls custom setters for all attributes with custom setters.
-				this._applyAttributes();
-
-				// If srcNodeRef was specified, then swap out original srcNode for this widget's DOM tree.
-				// For 2.0, move this after postCreate().  postCreate() shouldn't depend on the
-				// widget being attached to the DOM since it isn't when a widget is created programmatically like
-				// new MyWidget({}).	See #11635.
-				var source = this.srcNodeRef;
-				if(source && source.parentNode && this.domNode !== source){
-					source.parentNode.replaceChild(this.domNode, source);
-					deleteSrcNodeRef = true;
-				}
-
-				// Note: for 2.0 may want to rename widgetId to dojo._scopeName + "_widgetId",
-				// assuming that dojo._scopeName even exists in 2.0
-				this.domNode.setAttribute("widgetId", this.id);
-			}
-			this.postCreate();
-
-			// If srcNodeRef has been processed and removed from the DOM (e.g. TemplatedWidget) then delete it to allow GC.
-			// I think for back-compatibility it isn't deleting srcNodeRef until after postCreate() has run.
-			if(deleteSrcNodeRef){
-				delete this.srcNodeRef;
-			}
-
-			this._created = true;
-		},
-
-		_applyAttributes: function(){
-			// summary:
-			//		Step during widget creation to copy  widget attributes to the
-			//		DOM according to attributeMap and _setXXXAttr objects, and also to call
-			//		custom _setXXXAttr() methods.
-			//
-			//		Skips over blank/false attribute values, unless they were explicitly specified
-			//		as parameters to the widget, since those are the default anyway,
-			//		and setting tabIndex="" is different than not setting tabIndex at all.
-			//
-			//		For backwards-compatibility reasons attributeMap overrides _setXXXAttr when
-			//		_setXXXAttr is a hash/string/array, but _setXXXAttr as a functions override attributeMap.
-			// tags:
-			//		private
-
-			// Call this.set() for each property that was either specified as parameter to constructor,
-			// or is in the list found above.	For correlated properties like value and displayedValue, the one
-			// specified as a parameter should take precedence.
-			// Particularly important for new DateTextBox({displayedValue: ...}) since DateTextBox's default value is
-			// NaN and thus is not ignored like a default value of "".
-
-			// Step 1: Save the current values of the widget properties that were specified as parameters to the constructor.
-			// Generally this.foo == this.params.foo, except if postMixInProperties() changed the value of this.foo.
-			var params = {};
-			for(var key in this.params || {}){
-				params[key] = this._get(key);
-			}
-
-			// Step 2: Call set() for each property with a non-falsy value that wasn't passed as a parameter to the constructor
-			array.forEach(this.constructor._setterAttrs, function(key){
-				if(!(key in params)){
-					var val = this._get(key);
-					if(val){
-						this.set(key, val);
-					}
-				}
-			}, this);
-
-			// Step 3: Call set() for each property that was specified as parameter to constructor.
-			// Use params hash created above to ignore side effects from step #2 above.
-			for(key in params){
-				this.set(key, params[key]);
-			}
-		},
-
-		postMixInProperties: function(){
-			// summary:
-			//		Called after the parameters to the widget have been read-in,
-			//		but before the widget template is instantiated. Especially
-			//		useful to set properties that are referenced in the widget
-			//		template.
-			// tags:
-			//		protected
-		},
-
-		buildRendering: function(){
-			// summary:
-			//		Construct the UI for this widget, setting this.domNode.
-			//		Most widgets will mixin `dijit._TemplatedMixin`, which implements this method.
-			// tags:
-			//		protected
-
-			if(!this.domNode){
-				// Create root node if it wasn't created by _TemplatedMixin
-				this.domNode = this.srcNodeRef || this.ownerDocument.createElement("div");
-			}
-
-			// baseClass is a single class name or occasionally a space-separated list of names.
-			// Add those classes to the DOMNode.  If RTL mode then also add with Rtl suffix.
-			// TODO: make baseClass custom setter
-			if(this.baseClass){
-				var classes = this.baseClass.split(" ");
-				if(!this.isLeftToRight()){
-					classes = classes.concat(array.map(classes, function(name){
-						return name + "Rtl";
-					}));
-				}
-				domClass.add(this.domNode, classes);
-			}
-		},
-
-		postCreate: function(){
-			// summary:
-			//		Processing after the DOM fragment is created
-			// description:
-			//		Called after the DOM fragment has been created, but not necessarily
-			//		added to the document.  Do not include any operations which rely on
-			//		node dimensions or placement.
-			// tags:
-			//		protected
-		},
-
-		startup: function(){
-			// summary:
-			//		Processing after the DOM fragment is added to the document
-			// description:
-			//		Called after a widget and its children have been created and added to the page,
-			//		and all related widgets have finished their create() cycle, up through postCreate().
-			//
-			//		Note that startup() may be called while the widget is still hidden, for example if the widget is
-			//		inside a hidden dijit/Dialog or an unselected tab of a dijit/layout/TabContainer.
-			//		For widgets that need to do layout, it's best to put that layout code inside resize(), and then
-			//		extend dijit/layout/_LayoutWidget so that resize() is called when the widget is visible.
-			if(this._started){
-				return;
-			}
-			this._started = true;
-			array.forEach(this.getChildren(), function(obj){
-				if(!obj._started && !obj._destroyed && lang.isFunction(obj.startup)){
-					obj.startup();
-					obj._started = true;
-				}
-			});
-		},
-
-		//////////// DESTROY FUNCTIONS ////////////////////////////////
-
-		destroyRecursive: function(/*Boolean?*/ preserveDom){
-			// summary:
-			//		Destroy this widget and its descendants
-			// description:
-			//		This is the generic "destructor" function that all widget users
-			//		should call to cleanly discard with a widget. Once a widget is
-			//		destroyed, it is removed from the manager object.
-			// preserveDom:
-			//		If true, this method will leave the original DOM structure
-			//		alone of descendant Widgets. Note: This will NOT work with
-			//		dijit._TemplatedMixin widgets.
-
-			this._beingDestroyed = true;
-			this.destroyDescendants(preserveDom);
-			this.destroy(preserveDom);
-		},
-
-		destroy: function(/*Boolean*/ preserveDom){
-			// summary:
-			//		Destroy this widget, but not its descendants.  Descendants means widgets inside of
-			//		this.containerNode.   Will also destroy any resources (including widgets) registered via this.own().
-			//
-			//		This method will also destroy internal widgets such as those created from a template,
-			//		assuming those widgets exist inside of this.domNode but outside of this.containerNode.
-			//
-			//		For 2.0 it's planned that this method will also destroy descendant widgets, so apps should not
-			//		depend on the current ability to destroy a widget without destroying its descendants.   Generally
-			//		they should use destroyRecursive() for widgets with children.
-			// preserveDom: Boolean
-			//		If true, this method will leave the original DOM structure alone.
-			//		Note: This will not yet work with _TemplatedMixin widgets
-
-			this._beingDestroyed = true;
-			this.uninitialize();
-
-			function destroy(w){
-				if(w.destroyRecursive){
-					w.destroyRecursive(preserveDom);
-				}else if(w.destroy){
-					w.destroy(preserveDom);
-				}
-			}
-
-			// Back-compat, remove for 2.0
-			array.forEach(this._connects, lang.hitch(this, "disconnect"));
-			array.forEach(this._supportingWidgets, destroy);
-
-			// Destroy supporting widgets, but not child widgets under this.containerNode (for 2.0, destroy child widgets
-			// here too).   if() statement is to guard against exception if destroy() called multiple times (see #15815).
-			if(this.domNode){
-				array.forEach(registry.findWidgets(this.domNode, this.containerNode), destroy);
-			}
-
-			this.destroyRendering(preserveDom);
-			registry.remove(this.id);
-			this._destroyed = true;
-		},
-
-		destroyRendering: function(/*Boolean?*/ preserveDom){
-			// summary:
-			//		Destroys the DOM nodes associated with this widget.
-			// preserveDom:
-			//		If true, this method will leave the original DOM structure alone
-			//		during tear-down. Note: this will not work with _Templated
-			//		widgets yet.
-			// tags:
-			//		protected
-
-			if(this.bgIframe){
-				this.bgIframe.destroy(preserveDom);
-				delete this.bgIframe;
-			}
-
-			if(this.domNode){
-				if(preserveDom){
-					domAttr.remove(this.domNode, "widgetId");
-				}else{
-					domConstruct.destroy(this.domNode);
-				}
-				delete this.domNode;
-			}
-
-			if(this.srcNodeRef){
-				if(!preserveDom){
-					domConstruct.destroy(this.srcNodeRef);
-				}
-				delete this.srcNodeRef;
-			}
-		},
-
-		destroyDescendants: function(/*Boolean?*/ preserveDom){
-			// summary:
-			//		Recursively destroy the children of this widget and their
-			//		descendants.
-			// preserveDom:
-			//		If true, the preserveDom attribute is passed to all descendant
-			//		widget's .destroy() method. Not for use with _Templated
-			//		widgets.
-
-			// get all direct descendants and destroy them recursively
-			array.forEach(this.getChildren(), function(widget){
-				if(widget.destroyRecursive){
-					widget.destroyRecursive(preserveDom);
-				}
-			});
-		},
-
-		uninitialize: function(){
-			// summary:
-			//		Deprecated. Override destroy() instead to implement custom widget tear-down
-			//		behavior.
-			// tags:
-			//		protected
-			return false;
-		},
-
-		////////////////// GET/SET, CUSTOM SETTERS, ETC. ///////////////////
-
-		_setStyleAttr: function(/*String||Object*/ value){
-			// summary:
-			//		Sets the style attribute of the widget according to value,
-			//		which is either a hash like {height: "5px", width: "3px"}
-			//		or a plain string
-			// description:
-			//		Determines which node to set the style on based on style setting
-			//		in attributeMap.
-			// tags:
-			//		protected
-
-			var mapNode = this.domNode;
-
-			// Note: technically we should revert any style setting made in a previous call
-			// to his method, but that's difficult to keep track of.
-
-			if(lang.isObject(value)){
-				domStyle.set(mapNode, value);
-			}else{
-				if(mapNode.style.cssText){
-					mapNode.style.cssText += "; " + value;
-				}else{
-					mapNode.style.cssText = value;
-				}
-			}
-
-			this._set("style", value);
-		},
-
-		_attrToDom: function(/*String*/ attr, /*String*/ value, /*Object?*/ commands){
-			// summary:
-			//		Reflect a widget attribute (title, tabIndex, duration etc.) to
-			//		the widget DOM, as specified by commands parameter.
-			//		If commands isn't specified then it's looked up from attributeMap.
-			//		Note some attributes like "type"
-			//		cannot be processed this way as they are not mutable.
-			// attr:
-			//		Name of member variable (ex: "focusNode" maps to this.focusNode) pointing
-			//		to DOMNode inside the widget, or alternately pointing to a subwidget
-			// tags:
-			//		private
-
-			commands = arguments.length >= 3 ? commands : this.attributeMap[attr];
-
-			array.forEach(lang.isArray(commands) ? commands : [commands], function(command){
-
-				// Get target node and what we are doing to that node
-				var mapNode = this[command.node || command || "domNode"];	// DOM node
-				var type = command.type || "attribute";	// class, innerHTML, innerText, or attribute
-
-				switch(type){
-					case "attribute":
-						if(lang.isFunction(value)){ // functions execute in the context of the widget
-							value = lang.hitch(this, value);
-						}
-
-						// Get the name of the DOM node attribute; usually it's the same
-						// as the name of the attribute in the widget (attr), but can be overridden.
-						// Also maps handler names to lowercase, like onSubmit --> onsubmit
-						var attrName = command.attribute ? command.attribute :
-							(/^on[A-Z][a-zA-Z]*$/.test(attr) ? attr.toLowerCase() : attr);
-
-						if(mapNode.tagName){
-							// Normal case, mapping to a DOMNode.  Note that modern browsers will have a mapNode.set()
-							// method, but for consistency we still call domAttr
-							domAttr.set(mapNode, attrName, value);
-						}else{
-							// mapping to a sub-widget
-							mapNode.set(attrName, value);
-						}
-						break;
-					case "innerText":
-						mapNode.innerHTML = "";
-						mapNode.appendChild(this.ownerDocument.createTextNode(value));
-						break;
-					case "innerHTML":
-						mapNode.innerHTML = value;
-						break;
-					case "class":
-						domClass.replace(mapNode, value, this[attr]);
-						break;
-				}
-			}, this);
-		},
-
-		get: function(name){
-			// summary:
-			//		Get a property from a widget.
-			// name:
-			//		The property to get.
-			// description:
-			//		Get a named property from a widget. The property may
-			//		potentially be retrieved via a getter method. If no getter is defined, this
-			//		just retrieves the object's property.
-			//
-			//		For example, if the widget has properties `foo` and `bar`
-			//		and a method named `_getFooAttr()`, calling:
-			//		`myWidget.get("foo")` would be equivalent to calling
-			//		`widget._getFooAttr()` and `myWidget.get("bar")`
-			//		would be equivalent to the expression
-			//		`widget.bar2`
-			var names = this._getAttrNames(name);
-			return this[names.g] ? this[names.g]() : this._get(name);
-		},
-
-		set: function(name, value){
-			// summary:
-			//		Set a property on a widget
-			// name:
-			//		The property to set.
-			// value:
-			//		The value to set in the property.
-			// description:
-			//		Sets named properties on a widget which may potentially be handled by a
-			//		setter in the widget.
-			//
-			//		For example, if the widget has properties `foo` and `bar`
-			//		and a method named `_setFooAttr()`, calling
-			//		`myWidget.set("foo", "Howdy!")` would be equivalent to calling
-			//		`widget._setFooAttr("Howdy!")` and `myWidget.set("bar", 3)`
-			//		would be equivalent to the statement `widget.bar = 3;`
-			//
-			//		set() may also be called with a hash of name/value pairs, ex:
-			//
-			//	|	myWidget.set({
-			//	|		foo: "Howdy",
-			//	|		bar: 3
-			//	|	});
-			//
-			//	This is equivalent to calling `set(foo, "Howdy")` and `set(bar, 3)`
-
-			if(typeof name === "object"){
-				for(var x in name){
-					this.set(x, name[x]);
-				}
-				return this;
-			}
-			var names = this._getAttrNames(name),
-				setter = this[names.s];
-			if(lang.isFunction(setter)){
-				// use the explicit setter
-				var result = setter.apply(this, Array.prototype.slice.call(arguments, 1));
-			}else{
-				// Mapping from widget attribute to DOMNode/subwidget attribute/value/etc.
-				// Map according to:
-				//		1. attributeMap setting, if one exists (TODO: attributeMap deprecated, remove in 2.0)
-				//		2. _setFooAttr: {...} type attribute in the widget (if one exists)
-				//		3. apply to focusNode or domNode if standard attribute name, excluding funcs like onClick.
-				// Checks if an attribute is a "standard attribute" by whether the DOMNode JS object has a similar
-				// attribute name (ex: accept-charset attribute matches jsObject.acceptCharset).
-				// Note also that Tree.focusNode() is a function not a DOMNode, so test for that.
-				var defaultNode = this.focusNode && !lang.isFunction(this.focusNode) ? "focusNode" : "domNode",
-					tag = this[defaultNode] && this[defaultNode].tagName,
-					attrsForTag = tag && (tagAttrs[tag] || (tagAttrs[tag] = getAttrs(this[defaultNode]))),
-					map = name in this.attributeMap ? this.attributeMap[name] :
-						names.s in this ? this[names.s] :
-							((attrsForTag && names.l in attrsForTag && typeof value != "function") ||
-								/^aria-|^data-|^role$/.test(name)) ? defaultNode : null;
-				if(map != null){
-					this._attrToDom(name, value, map);
-				}
-				this._set(name, value);
-			}
-			return result || this;
-		},
-
-		_attrPairNames: {}, // shared between all widgets
-		_getAttrNames: function(name){
-			// summary:
-			//		Helper function for get() and set().
-			//		Caches attribute name values so we don't do the string ops every time.
-			// tags:
-			//		private
-
-			var apn = this._attrPairNames;
-			if(apn[name]){
-				return apn[name];
-			}
-			var uc = name.replace(/^[a-z]|-[a-zA-Z]/g, function(c){
-				return c.charAt(c.length - 1).toUpperCase();
-			});
-			return (apn[name] = {
-				n: name + "Node",
-				s: "_set" + uc + "Attr", // converts dashes to camel case, ex: accept-charset --> _setAcceptCharsetAttr
-				g: "_get" + uc + "Attr",
-				l: uc.toLowerCase()        // lowercase name w/out dashes, ex: acceptcharset
-			});
-		},
-
-		_set: function(/*String*/ name, /*anything*/ value){
-			// summary:
-			//		Helper function to set new value for specified property, and call handlers
-			//		registered with watch() if the value has changed.
-			var oldValue = this[name];
-			this[name] = value;
-			if(this._created && value !== oldValue){
-				if(this._watchCallbacks){
-					this._watchCallbacks(name, oldValue, value);
-				}
-				this.emit("attrmodified-" + name, {
-					detail: {
-						prevValue: oldValue,
-						newValue: value
-					}
-				});
-			}
-		},
-
-		_get: function(/*String*/ name){
-			// summary:
-			//		Helper function to get value for specified property stored by this._set(),
-			//		i.e. for properties with custom setters.  Used mainly by custom getters.
-			//
-			//		For example, CheckBox._getValueAttr() calls this._get("value").
-
-			// future: return name in this.props ? this.props[name] : this[name];
-			return this[name];
-		},
-
-		emit: function(/*String*/ type, /*Object?*/ eventObj, /*Array?*/ callbackArgs){
-			// summary:
-			//		Used by widgets to signal that a synthetic event occurred, ex:
-			//	|	myWidget.emit("attrmodified-selectedChildWidget", {}).
-			//
-			//		Emits an event on this.domNode named type.toLowerCase(), based on eventObj.
-			//		Also calls onType() method, if present, and returns value from that method.
-			//		By default passes eventObj to callback, but will pass callbackArgs instead, if specified.
-			//		Modifies eventObj by adding missing parameters (bubbles, cancelable, widget).
-			// tags:
-			//		protected
-
-			// Specify fallback values for bubbles, cancelable in case they are not set in eventObj.
-			// Also set pointer to widget, although since we can't add a pointer to the widget for native events
-			// (see #14729), maybe we shouldn't do it here?
-			eventObj = eventObj || {};
-			if(eventObj.bubbles === undefined){
-				eventObj.bubbles = true;
-			}
-			if(eventObj.cancelable === undefined){
-				eventObj.cancelable = true;
-			}
-			if(!eventObj.detail){
-				eventObj.detail = {};
-			}
-			eventObj.detail.widget = this;
-
-			var ret, callback = this["on" + type];
-			if(callback){
-				ret = callback.apply(this, callbackArgs ? callbackArgs : [eventObj]);
-			}
-
-			// Emit event, but avoid spurious emit()'s as parent sets properties on child during startup/destroy
-			if(this._started && !this._beingDestroyed){
-				on.emit(this.domNode, type.toLowerCase(), eventObj);
-			}
-
-			return ret;
-		},
-
-		on: function(/*String|Function*/ type, /*Function*/ func){
-			// summary:
-			//		Call specified function when event occurs, ex: myWidget.on("click", function(){ ... }).
-			// type:
-			//		Name of event (ex: "click") or extension event like touch.press.
-			// description:
-			//		Call specified function when event `type` occurs, ex: `myWidget.on("click", function(){ ... })`.
-			//		Note that the function is not run in any particular scope, so if (for example) you want it to run in the
-			//		widget's scope you must do `myWidget.on("click", lang.hitch(myWidget, func))`.
-
-			// For backwards compatibility, if there's an onType() method in the widget then connect to that.
-			// Remove in 2.0.
-			var widgetMethod = this._onMap(type);
-			if(widgetMethod){
-				return aspect.after(this, widgetMethod, func, true);
-			}
-
-			// Otherwise, just listen for the event on this.domNode.
-			return this.own(on(this.domNode, type, func))[0];
-		},
-
-		_onMap: function(/*String|Function*/ type){
-			// summary:
-			//		Maps on() type parameter (ex: "mousemove") to method name (ex: "onMouseMove").
-			//		If type is a synthetic event like touch.press then returns undefined.
-			var ctor = this.constructor, map = ctor._onMap;
-			if(!map){
-				map = (ctor._onMap = {});
-				for(var attr in ctor.prototype){
-					if(/^on/.test(attr)){
-						map[attr.replace(/^on/, "").toLowerCase()] = attr;
-					}
-				}
-			}
-			return map[typeof type == "string" && type.toLowerCase()];	// String
-		},
-
-		toString: function(){
-			// summary:
-			//		Returns a string that represents the widget.
-			// description:
-			//		When a widget is cast to a string, this method will be used to generate the
-			//		output. Currently, it does not implement any sort of reversible
-			//		serialization.
-			return '[Widget ' + this.declaredClass + ', ' + (this.id || 'NO ID') + ']'; // String
-		},
-
-		getChildren: function(){
-			// summary:
-			//		Returns all direct children of this widget, i.e. all widgets underneath this.containerNode whose parent
-			//		is this widget.   Note that it does not return all descendants, but rather just direct children.
-			//		Analogous to [Node.childNodes](https://developer.mozilla.org/en-US/docs/DOM/Node.childNodes),
-			//		except containing widgets rather than DOMNodes.
-			//
-			//		The result intentionally excludes internally created widgets (a.k.a. supporting widgets)
-			//		outside of this.containerNode.
-			//
-			//		Note that the array returned is a simple array.  Application code should not assume
-			//		existence of methods like forEach().
-
-			return this.containerNode ? registry.findWidgets(this.containerNode) : []; // dijit/_WidgetBase[]
-		},
-
-		getParent: function(){
-			// summary:
-			//		Returns the parent widget of this widget.
-
-			return registry.getEnclosingWidget(this.domNode.parentNode);
-		},
-
-		connect: function(/*Object|null*/ obj, /*String|Function*/ event, /*String|Function*/ method){
-			// summary:
-			//		Deprecated, will be removed in 2.0, use this.own(on(...)) or this.own(aspect.after(...)) instead.
-			//
-			//		Connects specified obj/event to specified method of this object
-			//		and registers for disconnect() on widget destroy.
-			//
-			//		Provide widget-specific analog to dojo.connect, except with the
-			//		implicit use of this widget as the target object.
-			//		Events connected with `this.connect` are disconnected upon
-			//		destruction.
-			// returns:
-			//		A handle that can be passed to `disconnect` in order to disconnect before
-			//		the widget is destroyed.
-			// example:
-			//	|	var btn = new Button();
-			//	|	// when foo.bar() is called, call the listener we're going to
-			//	|	// provide in the scope of btn
-			//	|	btn.connect(foo, "bar", function(){
-			//	|		console.debug(this.toString());
-			//	|	});
-			// tags:
-			//		protected
-
-			return this.own(connect.connect(obj, event, this, method))[0];	// handle
-		},
-
-		disconnect: function(handle){
-			// summary:
-			//		Deprecated, will be removed in 2.0, use handle.remove() instead.
-			//
-			//		Disconnects handle created by `connect`.
-			// tags:
-			//		protected
-
-			handle.remove();
-		},
-
-		subscribe: function(t, method){
-			// summary:
-			//		Deprecated, will be removed in 2.0, use this.own(topic.subscribe()) instead.
-			//
-			//		Subscribes to the specified topic and calls the specified method
-			//		of this object and registers for unsubscribe() on widget destroy.
-			//
-			//		Provide widget-specific analog to dojo.subscribe, except with the
-			//		implicit use of this widget as the target object.
-			// t: String
-			//		The topic
-			// method: Function
-			//		The callback
-			// example:
-			//	|	var btn = new Button();
-			//	|	// when /my/topic is published, this button changes its label to
-			//	|	// be the parameter of the topic.
-			//	|	btn.subscribe("/my/topic", function(v){
-			//	|		this.set("label", v);
-			//	|	});
-			// tags:
-			//		protected
-			return this.own(topic.subscribe(t, lang.hitch(this, method)))[0];	// handle
-		},
-
-		unsubscribe: function(/*Object*/ handle){
-			// summary:
-			//		Deprecated, will be removed in 2.0, use handle.remove() instead.
-			//
-			//		Unsubscribes handle created by this.subscribe.
-			//		Also removes handle from this widget's list of subscriptions
-			// tags:
-			//		protected
-
-			handle.remove();
-		},
-
-		isLeftToRight: function(){
-			// summary:
-			//		Return this widget's explicit or implicit orientation (true for LTR, false for RTL)
-			// tags:
-			//		protected
-			return this.dir ? (this.dir == "ltr") : domGeometry.isBodyLtr(this.ownerDocument); //Boolean
-		},
-
-		isFocusable: function(){
-			// summary:
-			//		Return true if this widget can currently be focused
-			//		and false if not
-			return this.focus && (domStyle.get(this.domNode, "display") != "none");
-		},
-
-		placeAt: function(/* String|DomNode|_Widget */ reference, /* String|Int? */ position){
-			// summary:
-			//		Place this widget somewhere in the DOM based
-			//		on standard domConstruct.place() conventions.
-			// description:
-			//		A convenience function provided in all _Widgets, providing a simple
-			//		shorthand mechanism to put an existing (or newly created) Widget
-			//		somewhere in the dom, and allow chaining.
-			// reference:
-			//		Widget, DOMNode, or id of widget or DOMNode
-			// position:
-			//		If reference is a widget (or id of widget), and that widget has an ".addChild" method,
-			//		it will be called passing this widget instance into that method, supplying the optional
-			//		position index passed.  In this case position (if specified) should be an integer.
-			//
-			//		If reference is a DOMNode (or id matching a DOMNode but not a widget),
-			//		the position argument can be a numeric index or a string
-			//		"first", "last", "before", or "after", same as dojo/dom-construct::place().
-			// returns: dijit/_WidgetBase
-			//		Provides a useful return of the newly created dijit._Widget instance so you
-			//		can "chain" this function by instantiating, placing, then saving the return value
-			//		to a variable.
-			// example:
-			//	|	// create a Button with no srcNodeRef, and place it in the body:
-			//	|	var button = new Button({ label:"click" }).placeAt(win.body());
-			//	|	// now, 'button' is still the widget reference to the newly created button
-			//	|	button.on("click", function(e){ console.log('click'); }));
-			// example:
-			//	|	// create a button out of a node with id="src" and append it to id="wrapper":
-			//	|	var button = new Button({},"src").placeAt("wrapper");
-			// example:
-			//	|	// place a new button as the first element of some div
-			//	|	var button = new Button({ label:"click" }).placeAt("wrapper","first");
-			// example:
-			//	|	// create a contentpane and add it to a TabContainer
-			//	|	var tc = dijit.byId("myTabs");
-			//	|	new ContentPane({ href:"foo.html", title:"Wow!" }).placeAt(tc)
-
-			var refWidget = !reference.tagName && registry.byId(reference);
-			if(refWidget && refWidget.addChild && (!position || typeof position === "number")){
-				// Adding this to refWidget and can use refWidget.addChild() to handle everything.
-				refWidget.addChild(this, position);
-			}else{
-				// "reference" is a plain DOMNode, or we can't use refWidget.addChild().   Use domConstruct.place() and
-				// target refWidget.containerNode for nested placement (position==number, "first", "last", "only"), and
-				// refWidget.domNode otherwise ("after"/"before"/"replace").  (But not supported officially, see #14946.)
-				var ref = refWidget ?
-					(refWidget.containerNode && !/after|before|replace/.test(position || "") ?
-						refWidget.containerNode : refWidget.domNode) : dom.byId(reference, this.ownerDocument);
-				domConstruct.place(this.domNode, ref, position);
-
-				// Start this iff it has a parent widget that's already started.
-				// TODO: for 2.0 maybe it should also start the widget when this.getParent() returns null??
-				if(!this._started && (this.getParent() || {})._started){
-					this.startup();
-				}
-			}
-			return this;
-		},
-
-		defer: function(fcn, delay){
-			// summary:
-			//		Wrapper to setTimeout to avoid deferred functions executing
-			//		after the originating widget has been destroyed.
-			//		Returns an object handle with a remove method (that returns null) (replaces clearTimeout).
-			// fcn: function reference
-			// delay: Optional number (defaults to 0)
-			// tags:
-			//		protected.
-			var timer = setTimeout(lang.hitch(this,
-				function(){
-					if(!timer){
-						return;
-					}
-					timer = null;
-					if(!this._destroyed){
-						lang.hitch(this, fcn)();
-					}
-				}),
-				delay || 0
-			);
-			return {
-				remove: function(){
-					if(timer){
-						clearTimeout(timer);
-						timer = null;
-					}
-					return null; // so this works well: handle = handle.remove();
-				}
-			};
-		}
-	});
-
-	if(has("dojo-bidi")){
-		_WidgetBase.extend(_BidiMixin);
-	}
-
-	return _WidgetBase;
-});
-
-},
-'dojo/Stateful':function(){
-define(["./_base/declare", "./_base/lang", "./_base/array", "./when"], function(declare, lang, array, when){
-	// module:
-	//		dojo/Stateful
-
-return declare("dojo.Stateful", null, {
-	// summary:
-	//		Base class for objects that provide named properties with optional getter/setter
-	//		control and the ability to watch for property changes
-	//
-	//		The class also provides the functionality to auto-magically manage getters
-	//		and setters for object attributes/properties.
-	//		
-	//		Getters and Setters should follow the format of _xxxGetter or _xxxSetter where 
-	//		the xxx is a name of the attribute to handle.  So an attribute of "foo" 
-	//		would have a custom getter of _fooGetter and a custom setter of _fooSetter.
-	//
-	// example:
-	//	|	var obj = new dojo.Stateful();
-	//	|	obj.watch("foo", function(){
-	//	|		console.log("foo changed to " + this.get("foo"));
-	//	|	});
-	//	|	obj.set("foo","bar");
-
-	// _attrPairNames: Hash
-	//		Used across all instances a hash to cache attribute names and their getter 
-	//		and setter names.
-	_attrPairNames: {},
-
-	_getAttrNames: function(name){
-		// summary:
-		//		Helper function for get() and set().
-		//		Caches attribute name values so we don't do the string ops every time.
-		// tags:
-		//		private
-
-		var apn = this._attrPairNames;
-		if(apn[name]){ return apn[name]; }
-		return (apn[name] = {
-			s: "_" + name + "Setter",
-			g: "_" + name + "Getter"
-		});
-	},
-
-	postscript: function(/*Object?*/ params){
-		// Automatic setting of params during construction
-		if (params){ this.set(params); }
-	},
-
-	_get: function(name, names){
-		// summary:
-		//		Private function that does a get based off a hash of names
-		// names:
-		//		Hash of names of custom attributes
-		return typeof this[names.g] === "function" ? this[names.g]() : this[name];
-	},
-	get: function(/*String*/name){
-		// summary:
-		//		Get a property on a Stateful instance.
-		// name:
-		//		The property to get.
-		// returns:
-		//		The property value on this Stateful instance.
-		// description:
-		//		Get a named property on a Stateful object. The property may
-		//		potentially be retrieved via a getter method in subclasses. In the base class
-		//		this just retrieves the object's property.
-		//		For example:
-		//	|	stateful = new dojo.Stateful({foo: 3});
-		//	|	stateful.get("foo") // returns 3
-		//	|	stateful.foo // returns 3
-
-		return this._get(name, this._getAttrNames(name)); //Any
-	},
-	set: function(/*String*/name, /*Object*/value){
-		// summary:
-		//		Set a property on a Stateful instance
-		// name:
-		//		The property to set.
-		// value:
-		//		The value to set in the property.
-		// returns:
-		//		The function returns this dojo.Stateful instance.
-		// description:
-		//		Sets named properties on a stateful object and notifies any watchers of
-		//		the property. A programmatic setter may be defined in subclasses.
-		//		For example:
-		//	|	stateful = new dojo.Stateful();
-		//	|	stateful.watch(function(name, oldValue, value){
-		//	|		// this will be called on the set below
-		//	|	}
-		//	|	stateful.set(foo, 5);
-		//
-		//	set() may also be called with a hash of name/value pairs, ex:
-		//	|	myObj.set({
-		//	|		foo: "Howdy",
-		//	|		bar: 3
-		//	|	})
-		//	This is equivalent to calling set(foo, "Howdy") and set(bar, 3)
-
-		// If an object is used, iterate through object
-		if(typeof name === "object"){
-			for(var x in name){
-				if(name.hasOwnProperty(x) && x !="_watchCallbacks"){
-					this.set(x, name[x]);
-				}
-			}
-			return this;
-		}
-
-		var names = this._getAttrNames(name),
-			oldValue = this._get(name, names),
-			setter = this[names.s],
-			result;
-		if(typeof setter === "function"){
-			// use the explicit setter
-			result = setter.apply(this, Array.prototype.slice.call(arguments, 1));
-		}else{
-			// no setter so set attribute directly
-			this[name] = value;
-		}
-		if(this._watchCallbacks){
-			var self = this;
-			// If setter returned a promise, wait for it to complete, otherwise call watches immediatly
-			when(result, function(){
-				self._watchCallbacks(name, oldValue, value);
-			});
-		}
-		return this; // dojo/Stateful
-	},
-	_changeAttrValue: function(name, value){
-		// summary:
-		//		Internal helper for directly changing an attribute value.
-		//
-		// name: String
-		//		The property to set.
-		// value: Mixed
-		//		The value to set in the property.
-		//
-		// description:
-		//		Directly change the value of an attribute on an object, bypassing any 
-		//		accessor setter.  Also handles the calling of watch and emitting events. 
-		//		It is designed to be used by descendent class when there are two values 
-		//		of attributes that are linked, but calling .set() is not appropriate.
-
-		var oldValue = this.get(name);
-		this[name] = value;
-		if(this._watchCallbacks){
-			this._watchCallbacks(name, oldValue, value);
-		}
-		return this; // dojo/Stateful
-	},
-	watch: function(/*String?*/name, /*Function*/callback){
-		// summary:
-		//		Watches a property for changes
-		// name:
-		//		Indicates the property to watch. This is optional (the callback may be the
-		//		only parameter), and if omitted, all the properties will be watched
-		// returns:
-		//		An object handle for the watch. The unwatch method of this object
-		//		can be used to discontinue watching this property:
-		//		|	var watchHandle = obj.watch("foo", callback);
-		//		|	watchHandle.unwatch(); // callback won't be called now
-		// callback:
-		//		The function to execute when the property changes. This will be called after
-		//		the property has been changed. The callback will be called with the |this|
-		//		set to the instance, the first argument as the name of the property, the
-		//		second argument as the old value and the third argument as the new value.
-
-		var callbacks = this._watchCallbacks;
-		if(!callbacks){
-			var self = this;
-			callbacks = this._watchCallbacks = function(name, oldValue, value, ignoreCatchall){
-				var notify = function(propertyCallbacks){
-					if(propertyCallbacks){
-						propertyCallbacks = propertyCallbacks.slice();
-						for(var i = 0, l = propertyCallbacks.length; i < l; i++){
-							propertyCallbacks[i].call(self, name, oldValue, value);
-						}
-					}
-				};
-				notify(callbacks['_' + name]);
-				if(!ignoreCatchall){
-					notify(callbacks["*"]); // the catch-all
-				}
-			}; // we use a function instead of an object so it will be ignored by JSON conversion
-		}
-		if(!callback && typeof name === "function"){
-			callback = name;
-			name = "*";
-		}else{
-			// prepend with dash to prevent name conflicts with function (like "name" property)
-			name = '_' + name;
-		}
-		var propertyCallbacks = callbacks[name];
-		if(typeof propertyCallbacks !== "object"){
-			propertyCallbacks = callbacks[name] = [];
-		}
-		propertyCallbacks.push(callback);
-
-		// TODO: Remove unwatch in 2.0
-		var handle = {};
-		handle.unwatch = handle.remove = function(){
-			var index = array.indexOf(propertyCallbacks, callback);
-			if(index > -1){
-				propertyCallbacks.splice(index, 1);
-			}
-		};
-		return handle; //Object
-	}
-
-});
-
-});
-
-},
-'dijit/Destroyable':function(){
-define([
-	"dojo/_base/array", // array.forEach array.map
-	"dojo/aspect",
-	"dojo/_base/declare"
-], function(array, aspect, declare){
-
-	// module:
-	//		dijit/Destroyable
-
-	return declare("dijit.Destroyable", null, {
-		// summary:
-		//		Mixin to track handles and release them when instance is destroyed.
-		// description:
-		//		Call this.own(...) on list of handles (returned from dojo/aspect, dojo/on,
-		//		dojo/Stateful::watch, or any class (including widgets) with a destroyRecursive() or destroy() method.
-		//		Then call destroy() later to destroy this instance and release the resources.
-
-		destroy: function(/*Boolean*/ preserveDom){
-			// summary:
-			//		Destroy this class, releasing any resources registered via own().
-			this._destroyed = true;
-		},
-
-		own: function(){
-			// summary:
-			//		Track specified handles and remove/destroy them when this instance is destroyed, unless they were
-			//		already removed/destroyed manually.
-			// tags:
-			//		protected
-			// returns:
-			//		The array of specified handles, so you can do for example:
-			//	|		var handle = this.own(on(...))[0];
-
-			array.forEach(arguments, function(handle){
-				var destroyMethodName =
-					"destroyRecursive" in handle ? "destroyRecursive" : // remove "destroyRecursive" for 2.0
-						"destroy" in handle ? "destroy" :
-							"remove";
-
-				// When this.destroy() is called, destroy handle.  Since I'm using aspect.before(),
-				// the handle will be destroyed before a subclass's destroy() method starts running, before it calls
-				// this.inherited() or even if it doesn't call this.inherited() at all.  If that's an issue, make an
-				// onDestroy() method and connect to that instead.
-				var odh = aspect.before(this, "destroy", function(preserveDom){
-					handle[destroyMethodName](preserveDom);
-				});
-
-				// If handle is destroyed manually before this.destroy() is called, remove the listener set directly above.
-				var hdh = aspect.after(handle, destroyMethodName, function(){
-					odh.remove();
-					hdh.remove();
-				}, true);
-			}, this);
-
-			return arguments;		// handle
-		}
-	});
-});
-
-},
-'dojox/mobile/ViewController':function(){
-define([
-	"dojo/_base/kernel",
-	"dojo/_base/array",
-	"dojo/_base/connect",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/_base/Deferred",
-	"dojo/dom",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/on",
-	"dojo/ready",
-	"dijit/registry",
-	"./ProgressIndicator",
-	"./TransitionEvent",
-	"./viewRegistry"
-], function(dojo, array, connect, declare, lang, win, Deferred, dom, domClass, domConstruct, on, ready, registry, ProgressIndicator, TransitionEvent, viewRegistry){
-
-	// module:
-	//		dojox/mobile/ViewController
-
-	var Controller = declare("dojox.mobile.ViewController", null, {
-		// summary:
-		//		A singleton class that controls view transition.
-		// description:
-		//		This class listens to the "startTransition" events and performs
-		//		view transitions. If the transition destination is an external
-		//		view specified with the url parameter, the view content is
-		//		retrieved and parsed to create a new target view.
-
-		// dataHandlerClass: Object
-		//		The data handler class used to load external views,
-		//		by default "dojox/mobile/dh/DataHandler"
-		//		(see the Data Handlers page in the reference documentation).
-		dataHandlerClass: "dojox/mobile/dh/DataHandler",
-		// dataSourceClass: Object
-		//		The data source class used to load external views,
-		//		by default "dojox/mobile/dh/UrlDataSource"
-		//		(see the Data Handlers page in the reference documentation).
-		dataSourceClass: "dojox/mobile/dh/UrlDataSource",
-		// fileTypeMapClass: Object
-		//		The file type map class used to load external views,
-		//		by default "dojox/mobile/dh/SuffixFileTypeMap"
-		//		(see the Data Handlers page in the reference documentation).
-		fileTypeMapClass: "dojox/mobile/dh/SuffixFileTypeMap",
-
-		constructor: function(){
-			// summary:
-			//		Creates a new instance of the class.
-			// tags:
-			//		private
-			this.viewMap = {};
-			ready(lang.hitch(this, function(){
-				on(win.body(), "startTransition", lang.hitch(this, "onStartTransition"));
-			}));
-		},
-
-		findTransitionViews: function(/*String*/moveTo){
-			// summary:
-			//		Parses the moveTo argument and determines a starting view and a destination view.
-			// returns: Array
-			//		An array containing the currently showing view, the destination view
-			//		and the transition parameters, or an empty array if the moveTo argument
-			//		could not be parsed. 
-			if(!moveTo){ return []; }
-			// removes a leading hash mark (#) and params if exists
-			// ex. "#bar&myParam=0003" -> "bar"
-			moveTo.match(/^#?([^&?]+)(.*)/);
-			var params = RegExp.$2;
-			var view = registry.byId(RegExp.$1);
-			if(!view){ return []; }
-			for(var v = view.getParent(); v; v = v.getParent()){ // search for the topmost invisible parent node
-				if(v.isVisible && !v.isVisible()){
-					var sv = view.getShowingView();
-					if(sv && sv.id !== view.id){
-						view.show();
-					}
-					view = v;
-				}
-			}
-			return [view.getShowingView(), view, params]; // fromView, toView, params
-		},
-
-		openExternalView: function(/*Object*/ transOpts, /*DomNode*/ target){
-			// summary:
-			//		Loads an external view and performs a transition to it.
-			// returns: dojo/_base/Deferred
-			//		Deferred object that resolves when the external view is
-			//		ready and a transition starts. Note that it resolves before
-			//		the transition is complete.
-			// description:
-			//		This method loads external view content through the
-			//		dojox/mobile data handlers, creates a new View instance with
-			//		the loaded content, and performs a view transition to the
-			//		new view. The external view content can be specified with
-			//		the url property of transOpts. The new view is created under
-			//		a DOM node specified by target.
-			//
-			// example:
-			//		This example loads view1.html, creates a new view under
-			//		`<body>`, and performs a transition to the new view with the
-			//		slide animation.
-			//		
-			//	|	var vc = ViewController.getInstance();
-			//	|	vc.openExternalView({
-			//	|	    url: "view1.html", 
-			//	|	    transition: "slide"
-			//	|	}, win.body());
-			//
-			//
-			// example:
-			//		If you want to perform a view transition without animation,
-			//		you can give transition:"none" to transOpts.
-			//
-			//	|	var vc = ViewController.getInstance();
-			//	|	vc.openExternalView({
-			//	|	    url: "view1.html", 
-			//	|	    transition: "none"
-			//	|	}, win.body());
-			//
-			// example:
-			//		If you want to dynamically create an external view, but do
-			//		not want to perform a view transition to it, you can give noTransition:true to transOpts.
-			//		This may be useful when you want to preload external views before the user starts using them.
-			//
-			//	|	var vc = ViewController.getInstance();
-			//	|	vc.openExternalView({
-			//	|	    url: "view1.html", 
-			//	|	    noTransition: true
-			//	|	}, win.body());
-			//
-			// example:
-			//		To do something when the external view is ready:
-			//
-			//	|	var vc = ViewController.getInstance();
-			//	|	Deferred.when(vc.openExternalView({...}, win.body()), function(){
-			//	|	    doSomething();
-			//	|	});
-
-			var d = new Deferred();
-			var id = this.viewMap[transOpts.url];
-			if(id){
-				transOpts.moveTo = id;
-				if(transOpts.noTransition){
-					registry.byId(id).hide();
-				}else{
-					new TransitionEvent(win.body(), transOpts).dispatch();
-				}
-				d.resolve(true);
-				return d;
-			}
-
-			// if a fixed bottom bar exists, a new view should be placed before it.
-			var refNode = null;
-			for(var i = target.childNodes.length - 1; i >= 0; i--){
-				var c = target.childNodes[i];
-				if(c.nodeType === 1){
-					var fixed = c.getAttribute("fixed") // TODO: Remove the non-HTML5-compliant attribute in 2.0
-						|| c.getAttribute("data-mobile-fixed")
-						|| (registry.byNode(c) && registry.byNode(c).fixed);
-					if(fixed === "bottom"){
-						refNode = c;
-						break;
-					}
-				}
-			}
-
-			var dh = transOpts.dataHandlerClass || this.dataHandlerClass;
-			var ds = transOpts.dataSourceClass || this.dataSourceClass;
-			var ft = transOpts.fileTypeMapClass || this.fileTypeMapClass;
-			require([dh, ds, ft], lang.hitch(this, function(DataHandler, DataSource, FileTypeMap){
-				var handler = new DataHandler(new DataSource(transOpts.data || transOpts.url), target, refNode);
-				var contentType = transOpts.contentType || FileTypeMap.getContentType(transOpts.url) || "html";
-				handler.processData(contentType, lang.hitch(this, function(id){
-					if(id){
-						this.viewMap[transOpts.url] = transOpts.moveTo = id;
-						if(transOpts.noTransition){
-							registry.byId(id).hide();
-						}else{
-							new TransitionEvent(win.body(), transOpts).dispatch();
-						}
-						d.resolve(true);
-					}else{
-						d.reject("Failed to load "+transOpts.url);
-					}
-				}));
-			}));
-			return d;
-		},
-
-		onStartTransition: function(evt){
-			// summary:
-			//		A handler that performs view transition.
-			evt.preventDefault();
-			if(!evt.detail){ return; }
-			var detail = evt.detail;
-			if(!detail.moveTo && !detail.href && !detail.url && !detail.scene){ return; }
-
-			if(detail.url && !detail.moveTo){
-				var urlTarget = detail.urlTarget;
-				var w = registry.byId(urlTarget);
-				var target = w && w.containerNode || dom.byId(urlTarget);
-				if(!target){
-					w = viewRegistry.getEnclosingView(evt.target);
-					target = w && w.domNode.parentNode || win.body();
-				}
-				this.openExternalView(detail, target);
-				return;
-			}else if(detail.href){
-				if(detail.hrefTarget && detail.hrefTarget != "_self"){
-					win.global.open(detail.href, detail.hrefTarget);
-				}else{
-					var view; // find top level visible view
-					for(var v = viewRegistry.getEnclosingView(evt.target); v; v = viewRegistry.getParentView(v)){
-						view = v;
-					}
-					if(view){
-						view.performTransition(null, detail.transitionDir, detail.transition, evt.target, function(){location.href = detail.href;});
-					}
-				}
-				return;
-			}else if(detail.scene){
-				connect.publish("/dojox/mobile/app/pushScene", [detail.scene]);
-				return;
-			}
-
-			var arr = this.findTransitionViews(detail.moveTo),
-				fromView = arr[0],
-				toView = arr[1],
-				params = arr[2];
-			if(!location.hash && !detail.hashchange){
-				viewRegistry.initialView = fromView;
-			}
-			if(detail.moveTo && toView){
-				detail.moveTo = (detail.moveTo.charAt(0) === '#' ? '#' + toView.id : toView.id) + params;
-			}
-			if(!fromView || (detail.moveTo && fromView === registry.byId(detail.moveTo.replace(/^#?([^&?]+).*/, "$1")))){ return; }
-			var src = registry.getEnclosingWidget(evt.target);
-			if(src && src.callback){
-				detail.context = src;
-				detail.method = src.callback;
-			}
-			fromView.performTransition(detail);
-		}
-	});
-	Controller._instance = new Controller(); // singleton
-	Controller.getInstance = function(){
-		return Controller._instance;
-	};
-	return Controller;
-});
-
-
-},
-'dojox/mobile/ProgressIndicator':function(){
-define([
-	"dojo/_base/config",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-geometry",
-	"dojo/dom-style",
-	"dojo/has",
-	"dijit/_Contained",
-	"dijit/_WidgetBase",
-	"./_css3"
-], function(config, declare, lang, domClass, domConstruct, domGeometry, domStyle, has, Contained, WidgetBase, css3){
-
-	// module:
-	//		dojox/mobile/ProgressIndicator
-
-	var cls = declare("dojox.mobile.ProgressIndicator", [WidgetBase, Contained], {
-		// summary:
-		//		A progress indication widget.
-		// description:
-		//		ProgressIndicator is a round spinning graphical representation
-		//		that indicates the current task is ongoing.
-
-		// interval: Number
-		//		The time interval in milliseconds for updating the spinning
-		//		indicator.
-		interval: 100,
-
-		// size: [const] Number
-		//		The size of the indicator in pixels.
-		//		Note that changing the value of the property after the widget
-		//		creation has no effect.
-		size: 40,
-
-		// removeOnStop: Boolean
-		//		If true, this widget is removed from the parent node
-		//		when stop() is called.
-		removeOnStop: true,
-
-		// startSpinning: Boolean
-		//		If true, calls start() to run the indicator at startup.
-		startSpinning: false,
-
-		// center: Boolean
-		//		If true, the indicator is displayed as center aligned.
-		center: true,
-
-		// colors: String[]
-		//		An array of indicator colors. 12 colors have to be given.
-		//		If colors are not specified, CSS styles
-		//		(mblProg0Color - mblProg11Color) are used.
-		colors: null,
-
-		/* internal properties */
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.	
-		baseClass: "mblProgressIndicator",
-
-		constructor: function(){
-			// summary:
-			//		Creates a new instance of the class.
-			this.colors = [];
-			this._bars = [];
-		},
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			if(this.center){
-				domClass.add(this.domNode, "mblProgressIndicatorCenter");
-			}
-			this.containerNode = domConstruct.create("div", {className:"mblProgContainer"}, this.domNode);
-			this.spinnerNode = domConstruct.create("div", null, this.containerNode);
-			for(var i = 0; i < 12; i++){
-				var div = domConstruct.create("div", {className:"mblProg mblProg"+i}, this.spinnerNode);
-				this._bars.push(div);
-			}
-			this.scale(this.size);
-			if(this.startSpinning){
-				this.start();
-			}
-		},
-
-		scale: function(/*Number*/size){
-			// summary:
-			//		Changes the size of the indicator.
-			// size:
-			//		The size of the indicator in pixels.
-			var scale = size / 40;
-			domStyle.set(this.containerNode, css3.add({}, {
-				transform: "scale(" + scale + ")",
-				transformOrigin: "0 0"
-			}));
-			domGeometry.setMarginBox(this.domNode, {w:size, h:size});
-			domGeometry.setMarginBox(this.containerNode, {w:size / scale, h:size / scale});
-		},
-
-		start: function(){
-			// summary:
-			//		Starts the spinning of the ProgressIndicator.
-			if(this.imageNode){
-				var img = this.imageNode;
-				var l = Math.round((this.containerNode.offsetWidth - img.offsetWidth) / 2);
-				var t = Math.round((this.containerNode.offsetHeight - img.offsetHeight) / 2);
-				img.style.margin = t+"px "+l+"px";
-				return;
-			}
-			var cntr = 0;
-			var _this = this;
-			var n = 12;
-			this.timer = setInterval(function(){
-				cntr--;
-				cntr = cntr < 0 ? n - 1 : cntr;
-				var c = _this.colors;
-				for(var i = 0; i < n; i++){
-					var idx = (cntr + i) % n;
-					if(c[idx]){
-						_this._bars[i].style.backgroundColor = c[idx];
-					}else{
-						domClass.replace(_this._bars[i],
-										 "mblProg" + idx + "Color",
-										 "mblProg" + (idx === n - 1 ? 0 : idx + 1) + "Color");
-					}
-				}
-			}, this.interval);
-		},
-
-		stop: function(){
-			// summary:
-			//		Stops the spinning of the ProgressIndicator.
-			if(this.timer){
-				clearInterval(this.timer);
-			}
-			this.timer = null;
-			if(this.removeOnStop && this.domNode && this.domNode.parentNode){
-				this.domNode.parentNode.removeChild(this.domNode);
-			}
-		},
-
-		setImage: function(/*String*/file){
-			// summary:
-			//		Sets an indicator icon image file (typically animated GIF).
-			//		If null is specified, restores the default spinner.
-			if(file){
-				this.imageNode = domConstruct.create("img", {src:file}, this.containerNode);
-				this.spinnerNode.style.display = "none";
-			}else{
-				if(this.imageNode){
-					this.containerNode.removeChild(this.imageNode);
-					this.imageNode = null;
-				}
-				this.spinnerNode.style.display = "";
-			}
-		},
-
-		destroy: function(){
-			this.inherited(arguments);
-			if(this === cls._instance){
-				cls._instance = null;
-			}
-		}
-	});
-
-	cls._instance = null;
-	cls.getInstance = function(props){
-		if(!cls._instance){
-			cls._instance = new cls(props);
-		}
-		return cls._instance;
-	};
-
-	return cls;
-});
-
-},
-'dojox/mobile/_css3':function(){
-define([
-	"dojo/_base/window",
-	"dojo/_base/array",
-	"dojo/has"
-], function(win, arr, has){
-	
-	// caches for capitalized names and hypen names
-	var cnames = [], hnames = [];
-	
-	// element style used for feature testing
-	var style = win.doc.createElement("div").style;
-	
-	// We just test webkit prefix for now since our themes only have standard and webkit
-	// (see dojox/mobile/themes/common/css3.less)
-	// More prefixes can be added if/when we add them to css3.less.
-	var prefixes = ["webkit"];
-	
-	// Does the browser support CSS3 animations?
-	has.add("css3-animations", function(global, document, element){
-		var style = element.style;
-		return (style["animation"] !== undefined && style["transition"] !== undefined) ||
-			arr.some(prefixes, function(p){
-				return style[p+"Animation"] !== undefined && style[p+"Transition"] !== undefined;
-			});
-	});
-	
-	var css3 = {
-		// summary:
-		//		This module provide some cross-browser support for CSS3 properties.
-	
-		name: function(/*String*/p, /*Boolean?*/hyphen){
-			// summary:
-			//		Returns the name of a CSS3 property with the correct prefix depending on the browser.
-			// p:
-			//		The (non-prefixed) property name. The property name is assumed to be consistent with
-			//		the hyphen argument, for example "transition-property" if hyphen is true, or "transitionProperty"
-			//		if hyphen is false. If the browser supports the non-prefixed property, the property name will be
-			//		returned unchanged.
-			// hyphen:
-			//		Optional, true if hyphen notation should be used (for example "transition-property" or "-webkit-transition-property"),
-			//		false for camel-case notation (for example "transitionProperty" or "webkitTransitionProperty").
-			
-			var n = (hyphen?hnames:cnames)[p];
-			if(!n){
-				
-				if(/End|Start/.test(p)){
-					// event names: no good way to feature-detect, so we
-					// assume they have the same prefix as the corresponding style property
-					var idx = p.length - (p.match(/End/) ? 3 : 5);
-					var s = p.substr(0, idx);
-					var pp = this.name(s);
-					if(pp == s){
-						// no prefix, standard event names are all lowercase
-						n = p.toLowerCase();
-					}else{
-						// prefix, e.g. webkitTransitionEnd (camel case)
-						n = pp + p.substr(idx);
-					}
-				}else if(p == "keyframes"){
-					// special case for keyframes, we also rely on consistency between 'animation' and 'keyframes'
-					var pk = this.name("animation", hyphen);
-					if(pk == "animation"){
-						n = p;
-					}else if(hyphen){
-						n = pk.replace(/animation/, "keyframes");
-					}else{
-						n = pk.replace(/Animation/, "Keyframes");
-					}
-				}else{
-					// convert name to camel-case for feature test
-					var cn = hyphen ? p.replace(/-(.)/g, function(match, p1){
-    					return p1.toUpperCase();
-					}) : p;
-					
-					if(style[cn] !== undefined){
-						// standard non-prefixed property is supported
-						n = p;
-					}else{
-						// try prefixed versions
-						cn = cn.charAt(0).toUpperCase() + cn.slice(1);
-						arr.some(prefixes, function(prefix){
-							if(style[prefix+cn] !== undefined){
-								if(hyphen){
-									n = "-" + prefix + "-" + p;
-								}else{
-									n = prefix + cn;
-								}
-							}
-						});
-					}
-				}
-				
-				if(!n){
-					// The property is not supported, just return it unchanged, it will be ignored.
-					n = p;
-				}
-
-				(hyphen?hnames:cnames)[p] = n;
-			}
-			return n;
-		},
-		
-		add: function(/*Object*/styles, /*Object*/css3Styles){
-			// summary:
-			//		Prefixes all property names in "css3Styles" and adds the prefixed properties in "styles".
-			//		Used as a convenience when an object is passed to domStyle.set to set multiple styles.
-			// example:
-			//		domStyle.set(bar, css3.add({
-			//			opacity: 0.6,
-			//			position: "absolute",
-			//			backgroundColor: "#606060"
-			//		}, {
-			//			borderRadius: "2px",
-			//			transformOrigin: "0 0"
-			//		}));
-			// returns:
-			//		The "styles" argument where the CSS3 styles have been added.
-			
-			for(var p in css3Styles){
-				if(css3Styles.hasOwnProperty(p)){
-					styles[css3.name(p)] = css3Styles[p];
-				}
-			}
-			return styles;
-		}
-	}
-	
-	return css3;
-});
-
-},
-'dojox/mobile/TransitionEvent':function(){
-define(["dojo/_base/declare", "dojo/on"], function(declare, on){
-
-	return declare("dojox.mobile.TransitionEvent", null, {
-		// summary:
-		//		A class used to trigger view transitions.
-		
-		constructor: function(/*DomNode*/target, /*Object*/transitionOptions, /*Event?*/triggerEvent){
-			// summary:
-			//		Creates a transition event.
-			// target:
-			//		The DOM node that initiates the transition (for example a ListItem).
-			// transitionOptions:
-			//		Contains the transition options.
-			// triggerEvent:
-			//		The event that triggered the transition (for example a touch event on a ListItem).
-			this.transitionOptions = transitionOptions;
-			this.target = target;
-			this.triggerEvent = triggerEvent||null;
-		},
-
-		dispatch: function(){
-			// summary:
-			//		Dispatches this transition event. Emits a "startTransition" event on the target.
-			var opts = {bubbles:true, cancelable:true, detail: this.transitionOptions, triggerEvent: this.triggerEvent};	
-			var evt = on.emit(this.target,"startTransition", opts);
-		}
-	});
-});
-
-},
-'dojox/mobile/viewRegistry':function(){
-define([
-	"dojo/_base/array",
-	"dojo/dom-class",
-	"dijit/registry"
-], function(array, domClass, registry){
-
-	// module:
-	//		dojox/mobile/viewRegistry
-
-	var viewRegistry = {
-		// summary:
-		//		A registry of existing views.
-
-		// length: Number
-		//		The number of registered views.
-		length: 0,
-		
-		// hash: [private] Object
-		//		The object used to register views.
-		hash: {},
-		
-		// initialView: [private] dojox/mobile/View
-		//		The initial view.
-		initialView: null,
-
-		add: function(/*dojox/mobile/View*/ view){
-			// summary:
-			//		Adds a view to the registry.
-			this.hash[view.id] = view;
-			this.length++;
-		},
-
-		remove: function(/*String*/ id){
-			// summary:
-			//		Removes a view from the registry.
-			if(this.hash[id]){
-				delete this.hash[id];
-				this.length--;
-			}
-		},
-
-		getViews: function(){
-			// summary:
-			//		Gets all registered views.
-			// returns: Array
-			var arr = [];
-			for(var i in this.hash){
-				arr.push(this.hash[i]);
-			}
-			return arr;
-		},
-
-		getParentView: function(/*dojox/mobile/View*/ view){
-			// summary:
-			//		Gets the parent view of the specified view.
-			// returns: dojox/mobile/View
-			for(var v = view.getParent(); v; v = v.getParent()){
-				if(domClass.contains(v.domNode, "mblView")){ return v; }
-			}
-			return null;
-		},
-
-		getChildViews: function(/*dojox/mobile/View*/ parent){
-			// summary:
-			//		Gets the children views of the specified view.
-			// returns: Array
-			return array.filter(this.getViews(), function(v){ return this.getParentView(v) === parent; }, this);
-		},
-
-		getEnclosingView: function(/*DomNode*/ node){
-			// summary:
-			//		Gets the view containing the specified DOM node.
-			// returns: dojox/mobile/View
-			for(var n = node; n && n.tagName !== "BODY"; n = n.parentNode){
-				if(n.nodeType === 1 && domClass.contains(n, "mblView")){
-					return registry.byNode(n);
-				}
-			}
-			return null;
-		},
-
-		getEnclosingScrollable: function(/*DomNode*/ node){
-			// summary:
-			//		Gets the dojox/mobile/scrollable object containing the specified DOM node.
-			// returns: dojox/mobile/scrollable
-			for(var w = registry.getEnclosingWidget(node); w; w = w.getParent()){
-				if(w.scrollableParams && w._v){ return w; }
-			}
-			return null;
-		}
-	};
-
-	return viewRegistry;
-});
-
-},
-'dojox/mobile/transition':function(){
-define([
-	"dojo/_base/Deferred",
-	"dojo/_base/config"
-], function(Deferred, config){
-	/*=====
-	return {
-		// summary:
-		//		This is the wrapper module which loads
-		//		dojox/css3/transit conditionally. If mblCSS3Transition
-		//		is set to 'dojox/css3/transit', it will be loaded as
-		//		the module to conduct view transitions, otherwise this module returns null.
-	};
-	=====*/
-	if(config['mblCSS3Transition']){
-		//require dojox/css3/transit and resolve it as the result of transitDeferred.
-		var transitDeferred = new Deferred();
-		require([config['mblCSS3Transition']], function(transit){
-			transitDeferred.resolve(transit);
-		});
-		return transitDeferred;
-	}
-	return null;
-});
-
-},
-'dojox/mobile/Heading':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/connect",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-style",
-	"dojo/dom-attr",
-	"dijit/registry",
-	"dijit/_Contained",
-	"dijit/_Container",
-	"dijit/_WidgetBase",
-	"./ProgressIndicator",
-	"./ToolBarButton",
-	"./View",
-	"dojo/has",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/Heading"
-], function(array, connect, declare, lang, win, dom, domClass, domConstruct, domStyle, domAttr, registry, Contained, Container, WidgetBase, ProgressIndicator, ToolBarButton, View, has, BidiHeading){
-
-	// module:
-	//		dojox/mobile/Heading
-
-	var dm = lang.getObject("dojox.mobile", true);
-
-	var Heading = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiHeading" : "dojox.mobile.Heading", [WidgetBase, Container, Contained],{
-		// summary:
-		//		A widget that represents a navigation bar.
-		// description:
-		//		Heading is a widget that represents a navigation bar, which
-		//		usually appears at the top of an application. It usually
-		//		displays the title of the current view and can contain a
-		//		navigational control. If you use it with
-		//		dojox/mobile/ScrollableView, it can also be used as a fixed
-		//		header bar or a fixed footer bar. In such cases, specify the
-		//		fixed="top" attribute to be a fixed header bar or the
-		//		fixed="bottom" attribute to be a fixed footer bar. Heading can
-		//		have one or more ToolBarButton widgets as its children.
-
-		// back: String
-		//		A label for the navigational control to return to the previous View.
-		back: "",
-
-		// href: String
-		//		A URL to open when the navigational control is pressed.
-		href: "",
-
-		// moveTo: String
-		//		The id of the transition destination of the navigation control.
-		//		If the value has a hash sign ('#') before the id (e.g. #view1)
-		//		and the dojox/mobile/bookmarkable module is loaded by the user application,
-		//		the view transition updates the hash in the browser URL so that the
-		//		user can bookmark the destination view. In this case, the user
-		//		can also use the browser's back/forward button to navigate
-		//		through the views in the browser history.
-		//
-		//		If null, transitions to a blank view.
-		//		If '#', returns immediately without transition.
-		moveTo: "",
-
-		// transition: String
-		//		A type of animated transition effect. You can choose from the
-		//		standard transition types, "slide", "fade", "flip", or from the
-		//		extended transition types, "cover", "coverv", "dissolve",
-		//		"reveal", "revealv", "scaleIn", "scaleOut", "slidev",
-		//		"swirl", "zoomIn", "zoomOut", "cube", and "swap". If "none" is
-		//		specified, transition occurs immediately without animation.
-		transition: "slide",
-
-		// label: String
-		//		A title text of the heading. If the label is not specified, the
-		//		innerHTML of the node is used as a label.
-		label: "",
-
-		// iconBase: String
-		//		The default icon path for child items.
-		iconBase: "",
-
-		// tag: String
-		//		A name of HTML tag to create as domNode.
-		tag: "h1",
-
-		// busy: Boolean
-		//		If true, a progress indicator spins on this widget.
-		busy: false,
-
-		// progStyle: String
-		//		A css class name to add to the progress indicator.
-		progStyle: "mblProgWhite",
-
-		/* internal properties */
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.	
-		baseClass: "mblHeading",
-
-		buildRendering: function(){
-			if(!this.templateString){ // true if this widget is not templated
-				// Create root node if it wasn't created by _TemplatedMixin
-				this.domNode = this.containerNode = this.srcNodeRef || win.doc.createElement(this.tag);
-			}
-			this.inherited(arguments);
-			
-			if(!this.templateString){ // true if this widget is not templated
-				if(!this.label){
-					array.forEach(this.domNode.childNodes, function(n){
-						if(n.nodeType == 3){
-							var v = lang.trim(n.nodeValue);
-							if(v){
-								this.label = v;
-								this.labelNode = domConstruct.create("span", {innerHTML:v}, n, "replace");
-							}
-						}
-					}, this);
-				}
-				if(!this.labelNode){
-					this.labelNode = domConstruct.create("span", null, this.domNode);
-				}
-				this.labelNode.className = "mblHeadingSpanTitle";
-				this.labelDivNode = domConstruct.create("div", {
-					className: "mblHeadingDivTitle",
-					innerHTML: this.labelNode.innerHTML
-				}, this.domNode);
-			}
-
-			if(this.labelDivNode){
-				domAttr.set(this.labelDivNode, "role", "heading"); //a11y
-				domAttr.set(this.labelDivNode, "aria-level", "1");
-			}
-
-			dom.setSelectable(this.domNode, false);
-		},
-
-		startup: function(){
-			if(this._started){ return; }
-			var parent = this.getParent && this.getParent();
-			if(!parent || !parent.resize){ // top level widget
-				var _this = this;
-				_this.defer(function(){ // necessary to render correctly
-					_this.resize();
-				});
-			}
-			this.inherited(arguments);
-		},
-
-		resize: function(){
-			if(this.labelNode){
-				// find the rightmost left button (B), and leftmost right button (C)
-				// +-----------------------------+
-				// | |A| |B|             |C| |D| |
-				// +-----------------------------+
-				var leftBtn, rightBtn;
-				var children = this.containerNode.childNodes;
-				for(var i = children.length - 1; i >= 0; i--){
-					var c = children[i];
-					if(c.nodeType === 1 && domStyle.get(c, "display") !== "none"){
-						if(!rightBtn && domStyle.get(c, "float") === "right"){
-							rightBtn = c;
-						}
-						if(!leftBtn && domStyle.get(c, "float") === "left"){
-							leftBtn = c;
-						}
-					}
-				}
-
-				if(!this.labelNodeLen && this.label){
-					this.labelNode.style.display = "inline";
-					this.labelNodeLen = this.labelNode.offsetWidth;
-					this.labelNode.style.display = "";
-				}
-
-				var bw = this.domNode.offsetWidth; // bar width
-				var rw = rightBtn ? bw - rightBtn.offsetLeft + 5 : 0; // rightBtn width
-				var lw = leftBtn ? leftBtn.offsetLeft + leftBtn.offsetWidth + 5 : 0; // leftBtn width
-				var tw = this.labelNodeLen || 0; // title width
-				domClass[bw - Math.max(rw,lw)*2 > tw ? "add" : "remove"](this.domNode, "mblHeadingCenterTitle");
-			}
-			array.forEach(this.getChildren(), function(child){
-				if(child.resize){ child.resize(); }
-			});
-		},
-
-		_setBackAttr: function(/*String*/back){
-			// tags:
-			//		private
-			this._set("back", back);
-			if(!this.backButton){
-				this.backButton = new ToolBarButton({
-					arrow: "left",
-					label: back,
-					moveTo: this.moveTo,
-					back: !this.moveTo && !this.href, // use browser history unless moveTo or href
-					href: this.href,
-					transition: this.transition,
-					transitionDir: -1,
-					dir: this.isLeftToRight() ? "ltr" : "rtl"
-				});
-				this.backButton.placeAt(this.domNode, "first");
-			}else{
-				this.backButton.set("label", back);
-			}
-			this.resize();
-		},
-		
-		_setMoveToAttr: function(/*String*/moveTo){
-			// tags:
-			//		private
-			this._set("moveTo", moveTo);
-			if(this.backButton){
-				this.backButton.set("moveTo", moveTo);
-				this.backButton.set("back", !moveTo && !this.href);
-			}
-		},
-		
-		_setHrefAttr: function(/*String*/href){
-			// tags:
-			//		private
-			this._set("href", href);
-			if(this.backButton){
-				this.backButton.set("href", href);
-				this.backButton.set("back", !this.moveTo && !href);
-			}
-		},
-		
-		_setTransitionAttr: function(/*String*/transition){
-			// tags:
-			//		private
-			this._set("transition", transition);
-			if(this.backButton){
-				this.backButton.set("transition", transition);
-			}
-		},
-		
-		_setLabelAttr: function(/*String*/label){
-			// tags:
-			//		private
-			this._set("label", label);
-			this.labelNode.innerHTML = this.labelDivNode.innerHTML = this._cv ? this._cv(label) : label;
-		},
-
-		_setBusyAttr: function(/*Boolean*/busy){
-			// tags:
-			//		private
-			var prog = this._prog;
-			if(busy){
-				if(!prog){
-					prog = this._prog = new ProgressIndicator({size:30, center:false});
-					domClass.add(prog.domNode, this.progStyle);
-				}
-				domConstruct.place(prog.domNode, this.domNode, "first");
-				prog.start();
-			}else if(prog){
-				prog.stop();
-			}
-			this._set("busy", busy);
-		}	
-	});
-
-	return has("dojo-bidi") ? declare("dojox.mobile.Heading", [Heading, BidiHeading]) : Heading;
-});
-
-},
-'dojox/mobile/ToolBarButton':function(){
-define([
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-style",
-	"dojo/dom-attr",
-	"./sniff",
-	"./_ItemBase",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/ToolBarButton"
-], function(declare, lang, win, domClass, domConstruct, domStyle, domAttr, has, ItemBase, BidiToolBarButton){
-
-	// module:
-	//		dojox/mobile/ToolBarButton
-
-	var ToolBarButton = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiToolBarButton" : "dojox.mobile.ToolBarButton", ItemBase, {
-		// summary:
-		//		A button widget which is placed in the Heading widget.
-		// description:
-		//		ToolBarButton is a button which is typically placed in the
-		//		Heading widget. It is a subclass of dojox/mobile/_ItemBase just
-		//		like ListItem or IconItem. So, unlike Button, it has basically
-		//		the same capability as ListItem or IconItem, such as icon
-		//		support, transition, etc.
-
-		// selected: Boolean
-		//		If true, the button is in the selected state.
-		selected: false,
-
-		// arrow: [const] String
-		//		Specifies "right" or "left" to be an arrow button.
-		//		Note that changing the value of the property after the widget 
-		//		creation has no effect.
-		arrow: "",
-
-		// light: [const] Boolean
-		//		If true, this widget produces only a single `<span>` node when it
-		//		has only an icon or only a label, and has no arrow. In that
-		//		case, you cannot have both icon and label, or arrow even if you
-		//		try to set them.
-		//		Note that changing the value of the property after the widget 
-		//		creation has no effect.
-		light: true,
-
-		// defaultColor: String
-		//		CSS class for the default color.
-		//		Note: If this button has an arrow (typically back buttons on iOS),
-		//		the class selector used for it is the value of defaultColor + "45".
-		//		For example, by default the arrow selector is "mblColorDefault45".
-		defaultColor: "mblColorDefault",
-
-		// selColor: String
-		//		CSS class for the selected color.
-		//		Note: If this button has an arrow (typically back buttons on iOS),
-		//		the class selector used for it is the value of selColor + "45".
-		//		For example, by default the selected arrow selector is "mblColorDefaultSel45".
-		selColor: "mblColorDefaultSel",
-
-		/* internal properties */
-		baseClass: "mblToolBarButton",
-
-		_selStartMethod: "touch",
-		_selEndMethod: "touch",
-
-		buildRendering: function(){
-			if(!this.label && this.srcNodeRef){
-				this.label = this.srcNodeRef.innerHTML;
-			}
-			this.label = lang.trim(this.label);
-			this.domNode = (this.srcNodeRef && this.srcNodeRef.tagName === "SPAN") ?
-				this.srcNodeRef : domConstruct.create("span");
-			domAttr.set(this.domNode, "role", "button");
-			this.inherited(arguments);
-
-			if(this.light && !this.arrow && (!this.icon || !this.label)){
-				this.labelNode = this.tableNode = this.bodyNode = this.iconParentNode = this.domNode;
-				domClass.add(this.domNode, this.defaultColor + " mblToolBarButtonBody" +
-							 (this.icon ? " mblToolBarButtonLightIcon" : " mblToolBarButtonLightText"));
-				return;
-			}
-
-			this.domNode.innerHTML = "";
-			if(this.arrow === "left" || this.arrow === "right"){
-				this.arrowNode = domConstruct.create("span", {
-					className: "mblToolBarButtonArrow mblToolBarButton" +
-					(this.arrow === "left" ? "Left" : "Right") + "Arrow " +
-					(has("ie") < 10 ? "" : (this.defaultColor + " " + this.defaultColor + "45"))
-				}, this.domNode);
-				domClass.add(this.domNode, "mblToolBarButtonHas" +
-					(this.arrow === "left" ? "Left" : "Right") + "Arrow");
-			}
-			this.bodyNode = domConstruct.create("span", {className:"mblToolBarButtonBody"}, this.domNode);
-			this.tableNode = domConstruct.create("table", {cellPadding:"0",cellSpacing:"0",border:"0"}, this.bodyNode);
-			if(!this.label && this.arrow){
-				// The class mblToolBarButtonText is needed for arrow shape too.
-				// If the button has a label, the class is set by _setLabelAttr. If no label, do it here.
-				this.tableNode.className = "mblToolBarButtonText";
-			}
-
-			var row = this.tableNode.insertRow(-1);
-			this.iconParentNode = row.insertCell(-1);
-			this.labelNode = row.insertCell(-1);
-			this.iconParentNode.className = "mblToolBarButtonIcon";
-			this.labelNode.className = "mblToolBarButtonLabel";
-
-			if(this.icon && this.icon !== "none" && this.label){
-				domClass.add(this.domNode, "mblToolBarButtonHasIcon");
-				domClass.add(this.bodyNode, "mblToolBarButtonLabeledIcon");
-			}
-
-			domClass.add(this.bodyNode, this.defaultColor);
-		},
-
-		startup: function(){
-			if(this._started){ return; }
-
-			this.connect(this.domNode, "onkeydown", "_onClick"); // for desktop browsers
-
-			this.inherited(arguments);
-			if(!this._isOnLine){
-				this._isOnLine = true;
-				// retry applying the attribute for which the custom setter delays the actual 
-				// work until _isOnLine is true. 
-				this.set("icon", this._pendingIcon !== undefined ? this._pendingIcon : this.icon);
-				// Not needed anymore (this code executes only once per life cycle):
-				delete this._pendingIcon; 
-			}
-		},
-
-		_onClick: function(e){
-			// summary:
-			//		Internal handler for click events.
-			// tags:
-			//		private
-			if(e && e.type === "keydown" && e.keyCode !== 13){ return; }
-			if(this.onClick(e) === false){ return; } // user's click action
-			this.defaultClickAction(e);
-		},
-
-		onClick: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		User defined function to handle clicks
-			// tags:
-			//		callback
-		},
-
-		_setLabelAttr: function(/*String*/text){
-			// summary:
-			//		Sets the button label text.
-			this.inherited(arguments);
-			domClass.toggle(this.tableNode, "mblToolBarButtonText", text || this.arrow); // also needed if only arrow
-		},
-
-		_setSelectedAttr: function(/*Boolean*/selected){
-			// summary:
-			//		Makes this widget in the selected or unselected state.
-			var replace = function(node, a, b){
-				domClass.replace(node, a + " " + a + "45", b + " " + b + "45");
-			}
-			this.inherited(arguments);
-			if(selected){
-				domClass.replace(this.bodyNode, this.selColor, this.defaultColor);
-				if(!(has("ie") < 10) && this.arrowNode){
-					replace(this.arrowNode, this.selColor, this.defaultColor);
-				}
-			}else{
-				domClass.replace(this.bodyNode, this.defaultColor, this.selColor);
-				if(!(has("ie") < 10) && this.arrowNode){
-					replace(this.arrowNode, this.defaultColor, this.selColor);
-				}
-			}
-			domClass.toggle(this.domNode, "mblToolBarButtonSelected", selected);
-			domClass.toggle(this.bodyNode, "mblToolBarButtonBodySelected", selected);
-		}
-	});
-	return has("dojo-bidi") ? declare("dojox.mobile.ToolBarButton", [ToolBarButton, BidiToolBarButton]) : ToolBarButton;
-});
-
-},
-'dojox/mobile/_ItemBase':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom-class",
-	"dojo/touch",
-	"dijit/registry",
-	"dijit/_Contained",
-	"dijit/_Container",
-	"dijit/_WidgetBase",
-	"./TransitionEvent",
-	"./iconUtils",
-	"./sniff",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/_ItemBase"
-], function(array, declare, lang, win, domClass, touch, registry, Contained, Container, WidgetBase, TransitionEvent, iconUtils, has, BidiItemBase){
-
-	// module:
-	//		dojox/mobile/_ItemBase
-
-	var _ItemBase = declare(has("dojo-bidi") ? "dojox.mobile._NonBidiItemBase" : "dojox.mobile._ItemBase", [WidgetBase, Container, Contained], {
-		// summary:
-		//		A base class for item classes (e.g. ListItem, IconItem, etc.).
-		// description:
-		//		_ItemBase is a base class for widgets that have capability to
-		//		make a view transition when clicked.
-
-		// icon: String
-		//		An icon image to display. The value can be either a path for an
-		//		image file or a class name of a DOM button. If icon is not
-		//		specified, the iconBase parameter of the parent widget is used.
-		icon: "",
-
-		// iconPos: String
-		//		The position of an aggregated icon. IconPos is comma separated
-		//		values like top,left,width,height (ex. "0,0,29,29"). If iconPos
-		//		is not specified, the iconPos parameter of the parent widget is
-		//		used.
-		iconPos: "", // top,left,width,height (ex. "0,0,29,29")
-
-		// alt: String
-		//		An alternate text for the icon image.
-		alt: "",
-
-		// href: String
-		//		A URL of another web page to go to.
-		href: "",
-
-		// hrefTarget: String
-		//		A target that specifies where to open a page specified by
-		//		href. The value will be passed to the 2nd argument of
-		//		window.open().
-		hrefTarget: "",
-
-		// moveTo: String
-		//		The id of the transition destination view which resides in the
-		//		current page.
-		//
-		//		If the value has a hash sign ('#') before the id (e.g. #view1)
-		//		and the dojo/hash module is loaded by the user application, the
-		//		view transition updates the hash in the browser URL so that the
-		//		user can bookmark the destination view. In this case, the user
-		//		can also use the browser's back/forward button to navigate
-		//		through the views in the browser history.
-		//
-		//		If null, transitions to a blank view.
-		//		If '#', returns immediately without transition.
-		moveTo: "",
-
-		// scene: String
-		//		The name of a scene. Used from dojox/mobile/app.
-		scene: "",
-
-		// clickable: Boolean
-		//		If true, this item becomes clickable even if a transition
-		//		destination (moveTo, etc.) is not specified.
-		clickable: false,
-
-		// url: String
-		//		A URL of an html fragment page or JSON data that represents a
-		//		new view content. The view content is loaded with XHR and
-		//		inserted in the current page. Then a view transition occurs to
-		//		the newly created view. The view is cached so that subsequent
-		//		requests would not load the content again.
-		url: "",
-
-		// urlTarget: String
-		//		Node id under which a new view will be created according to the
-		//		url parameter. If not specified, The new view will be created as
-		//		a sibling of the current view.
-		urlTarget: "",
-
-		// back: Boolean
-		//		If true, history.back() is called when clicked.
-		back: false,
-
-		// transition: String
-		//		A type of animated transition effect. You can choose from the
-		//		standard transition types, "slide", "fade", "flip", or from the
-		//		extended transition types, "cover", "coverv", "dissolve",
-		//		"reveal", "revealv", "scaleIn", "scaleOut", "slidev",
-		//		"swirl", "zoomIn", "zoomOut", "cube", and "swap". If "none" is
-		//		specified, transition occurs immediately without animation.
-		transition: "",
-
-		// transitionDir: Number
-		//		The transition direction. If 1, transition forward. If -1,
-		//		transition backward. For example, the slide transition slides
-		//		the view from right to left when dir == 1, and from left to
-		//		right when dir == -1.
-		transitionDir: 1,
-
-		// transitionOptions: Object
-		//		A hash object that holds transition options.
-		transitionOptions: null,
-
-		// callback: Function|String
-		//		A callback function that is called when the transition has been
-		//		finished. A function reference, or name of a function in
-		//		context.
-		callback: null,
-
-		// label: String
-		//		A label of the item. If the label is not specified, innerHTML is
-		//		used as a label.
-		label: "",
-
-		// toggle: Boolean
-		//		If true, the item acts like a toggle button.
-		toggle: false,
-
-		// selected: Boolean
-		//		If true, the item is highlighted to indicate it is selected.
-		selected: false,
-
-		// tabIndex: String
-		//		Tabindex setting for the item so users can hit the tab key to
-		//		focus on it.
-		tabIndex: "0",
-		
-		// _setTabIndexAttr: [private] String
-		//		Sets tabIndex to domNode.
-		_setTabIndexAttr: "",
-
-		/* internal properties */	
-
-		// paramsToInherit: String
-		//		Comma separated parameters to inherit from the parent.
-		paramsToInherit: "transition,icon",
-
-		// _selStartMethod: String
-		//		Specifies how the item enters the selected state.
-		//
-		//		- "touch": Use touch events to enter the selected state.
-		//		- "none": Do not change the selected state.
-		_selStartMethod: "none", // touch or none
-
-		// _selEndMethod: String
-		//		Specifies how the item leaves the selected state.
-		//
-		//		- "touch": Use touch events to leave the selected state.
-		//		- "timer": Use setTimeout to leave the selected state.
-		//		- "none": Do not change the selected state.
-		_selEndMethod: "none", // touch, timer, or none
-
-		// _delayedSelection: Boolean
-		//		If true, selection is delayed 100ms and canceled if dragged in
-		//		order to avoid selection when flick operation is performed.
-		_delayedSelection: false,
-
-		// _duration: Number
-		//		Duration of selection, milliseconds.
-		_duration: 800,
-
-		// _handleClick: Boolean
-		//		If true, this widget listens to touch events.
-		_handleClick: true,
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			this._isOnLine = this.inheritParams();
-		},
-
-		startup: function(){
-			if(this._started){ return; }
-			if(!this._isOnLine){
-				this.inheritParams();
-			}
-			this._updateHandles();
-			this.inherited(arguments);
-		},
-
-		inheritParams: function(){
-			// summary:
-			//		Copies from the parent the values of parameters specified 
-			//		by the property paramsToInherit.
-			var parent = this.getParent();
-			if(parent){
-				array.forEach(this.paramsToInherit.split(/,/), function(p){
-					if(p.match(/icon/i)){
-						var base = p + "Base", pos = p + "Pos";
-						if(this[p] && parent[base] &&
-							parent[base].charAt(parent[base].length - 1) === '/'){
-							this[p] = parent[base] + this[p];
-						}
-						if(!this[p]){ this[p] = parent[base]; }
-						if(!this[pos]){ this[pos] = parent[pos]; }
-					}
-					if(!this[p]){ this[p] = parent[p]; }
-				}, this);
-			}
-			return !!parent;
-		},
-
-		_updateHandles: function(){
-			// tags:
-			//		private
-			if(this._handleClick && this._selStartMethod === "touch"){
-				if(!this._onTouchStartHandle){
-					this._onTouchStartHandle = this.connect(this.domNode, touch.press, "_onTouchStart");
-				}
-			}else{
-				if(this._onTouchStartHandle){
-					this.disconnect(this._onTouchStartHandle);
-					this._onTouchStartHandle = null;
-				}
-			}
-		},
-		
-		getTransOpts: function(){
-			// summary:
-			//		Copies from the parent and returns the values of parameters  
-			//		specified by the property paramsToInherit.
-			var opts = this.transitionOptions || {};
-			array.forEach(["moveTo", "href", "hrefTarget", "url", "target",
-				"urlTarget", "scene", "transition", "transitionDir"], function(p){
-				opts[p] = opts[p] || this[p];
-			}, this);
-			return opts; // Object
-		},
-
-		userClickAction: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		User-defined click action.
-		},
-
-		defaultClickAction: function(/*Event*/e){
-			// summary:
-			//		The default action of this item.
-			this.handleSelection(e);
-			if(this.userClickAction(e) === false){ return; } // user's click action
-			this.makeTransition(e);
-		},
-
-		handleSelection: function(/*Event*/e){
-			// summary:
-			//		Handles this items selection state.
-
-			// Before transitioning, we want the visual effect of selecting the item.
-			// To ensure this effect happens even if _delayedSelection is true:
-			if(this._delayedSelection){
-				this.set("selected", true);
-			} // the item will be deselected after transition.
-
-			if(this._onTouchEndHandle){
-				this.disconnect(this._onTouchEndHandle);
-				this._onTouchEndHandle = null;
-			}
-
-			var p = this.getParent();
-			if(this.toggle){
-				this.set("selected", !this._currentSel);
-			}else if(p && p.selectOne){
-				this.set("selected", true);
-			}else{
-				if(this._selEndMethod === "touch"){
-					this.set("selected", false);
-				}else if(this._selEndMethod === "timer"){
-					this.defer(function(){
-						this.set("selected", false);
-					}, this._duration);
-				}
-			}
-		},
-
-		makeTransition: function(/*Event*/e){
-			// summary:
-			//		Makes a transition.
-			if(this.back && history){
-				history.back();	
-				return;
-			}	
-			if (this.href && this.hrefTarget && this.hrefTarget != "_self") {
-				win.global.open(this.href, this.hrefTarget || "_blank");
-				this._onNewWindowOpened(e);
-				return;
-			}
-			var opts = this.getTransOpts();
-			var doTransition = 
-				!!(opts.moveTo || opts.href || opts.url || opts.target || opts.scene);
-			if(this._prepareForTransition(e, doTransition ? opts : null) === false){ return; }
-			if(doTransition){
-				this.setTransitionPos(e);
-				new TransitionEvent(this.domNode, opts, e).dispatch();
-			}
-		},
-
-		_onNewWindowOpened: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		Subclasses may want to implement it.
-		},
-
-		_prepareForTransition: function(/*Event*/e, /*Object*/transOpts){
-			// summary:
-			//		Subclasses may want to implement it.
-		},
-
-		_onTouchStart: function(e){
-			// tags:
-			//		private
-			if(this.getParent().isEditing || this.onTouchStart(e) === false){ return; } // user's touchStart action
-			if(!this._onTouchEndHandle && this._selStartMethod === "touch"){
-				// Connect to the entire window. Otherwise, fail to receive
-				// events if operation is performed outside this widget.
-				// Expose both connect handlers in case the user has interest.
-				this._onTouchMoveHandle = this.connect(win.body(), touch.move, "_onTouchMove");
-				this._onTouchEndHandle = this.connect(win.body(), touch.release, "_onTouchEnd");
-			}
-			this.touchStartX = e.touches ? e.touches[0].pageX : e.clientX;
-			this.touchStartY = e.touches ? e.touches[0].pageY : e.clientY;
-			this._currentSel = this.selected;
-
-			if(this._delayedSelection){
-				// so as not to make selection when the user flicks on ScrollableView
-				this._selTimer = this.defer(function(){
-					this.set("selected", true);
-				}, 100);
-			}else{
-				this.set("selected", true);
-			}
-		},
-
-		onTouchStart: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		User-defined function to handle touchStart events.
-			// tags:
-			//		callback
-		},
-
-		_onTouchMove: function(e){
-			// tags:
-			//		private
-			var x = e.touches ? e.touches[0].pageX : e.clientX;
-			var y = e.touches ? e.touches[0].pageY : e.clientY;
-			if(Math.abs(x - this.touchStartX) >= 4 ||
-			   Math.abs(y - this.touchStartY) >= 4){ // dojox/mobile/scrollable.threshold
-				this.cancel();
-				var p = this.getParent();
-				if(p && p.selectOne){
-					this._prevSel && this._prevSel.set("selected", true);
-				}else{
-					this.set("selected", false);
-				}
-			}
-		},
-
-		_disconnect: function(){
-			// tags:
-			//		private
-			this.disconnect(this._onTouchMoveHandle);
-			this.disconnect(this._onTouchEndHandle);
-			this._onTouchMoveHandle = this._onTouchEndHandle = null;
-		},
-
-		cancel: function(){
-			// summary:
-			//		Cancels an ongoing selection (if any).
-			if(this._selTimer){
-				this._selTimer.remove(); 
-				this._selTimer = null;
-			}
-			this._disconnect();
-		},
-
-		_onTouchEnd: function(e){
-			// tags:
-			//		private
-			if(!this._selTimer && this._delayedSelection){ return; }
-			this.cancel();
-			this._onClick(e);
-		},
-
-		setTransitionPos: function(e){
-			// summary:
-			//		Stores the clicked position for later use.
-			// description:
-			//		Some of the transition animations (e.g. ScaleIn) need the
-			//		clicked position.
-			var w = this;
-			while(true){
-				w = w.getParent();
-				if(!w || domClass.contains(w.domNode, "mblView")){ break; }
-			}
-			if(w){
-				w.clickedPosX = e.clientX;
-				w.clickedPosY = e.clientY;
-			}
-		},
-
-		transitionTo: function(/*String|Object*/moveTo, /*String*/href, /*String*/url, /*String*/scene){
-			// summary:
-			//		Performs a view transition.
-			// description:
-			//		Given a transition destination, this method performs a view
-			//		transition. This method is typically called when this item
-			//		is clicked.
-			var opts = (moveTo && typeof(moveTo) === "object") ? moveTo :
-				{moveTo: moveTo, href: href, url: url, scene: scene,
-				 transition: this.transition, transitionDir: this.transitionDir};
-			new TransitionEvent(this.domNode, opts).dispatch();
-		},
-
-		_setIconAttr: function(icon){
-			// tags:
-			//		private
-			if(!this._isOnLine){
-				// record the value to be able to reapply it (see the code in the startup method)
-				this._pendingIcon = icon;  
-				return; 
-			} // icon may be invalid because inheritParams is not called yet
-			this._set("icon", icon);
-			this.iconNode = iconUtils.setIcon(icon, this.iconPos, this.iconNode, this.alt, this.iconParentNode, this.refNode, this.position);
-		},
-
-		_setLabelAttr: function(/*String*/text){
-			// tags:
-			//		private
-			this._set("label", text);
-			this.labelNode.innerHTML = this._cv ? this._cv(text) : text;
-		},
-
-		_setSelectedAttr: function(/*Boolean*/selected){
-			// summary:
-			//		Makes this widget in the selected or unselected state.
-			// description:
-			//		Subclass should override.
-			// tags:
-			//		private
-			if(selected){
-				var p = this.getParent();
-				if(p && p.selectOne){
-					// deselect the currently selected item
-					var arr = array.filter(p.getChildren(), function(w){
-						return w.selected;
-					});
-					array.forEach(arr, function(c){
-						this._prevSel = c;
-						c.set("selected", false);
-					}, this);
-				}
-			}
-			this._set("selected", selected);
-		}
-	});
-	return has("dojo-bidi") ? declare("dojox.mobile._ItemBase", [_ItemBase, BidiItemBase]) : _ItemBase;
-});
-
-},
-'dojox/mobile/iconUtils':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/config",
-	"dojo/_base/connect",
-	"dojo/_base/event",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-style",
-	"./sniff"
-], function(array, config, connect, event, lang, win, domClass, domConstruct, domStyle, has){
-
-	var dm = lang.getObject("dojox.mobile", true);
-
-	// module:
-	//		dojox/mobile/iconUtils
-
-	var IconUtils = function(){
-		// summary:
-		//		Utilities to create an icon (image, CSS sprite image, or DOM Button).
-
-		this.setupSpriteIcon = function(/*DomNode*/iconNode, /*String*/iconPos){
-			// summary:
-			//		Sets up CSS sprite for a foreground image.
-			if(iconNode && iconPos){
-				var arr = array.map(iconPos.split(/[ ,]/),function(item){return item-0});
-				var t = arr[0]; // top
-				var r = arr[1] + arr[2]; // right
-				var b = arr[0] + arr[3]; // bottom
-				var l = arr[1]; // left
-				domStyle.set(iconNode, {
-					position: "absolute",
-					clip: "rect("+t+"px "+r+"px "+b+"px "+l+"px)",
-					top: (iconNode.parentNode ? domStyle.get(iconNode, "top") : 0) - t + "px",
-					left: -l + "px"
-				});
-				domClass.add(iconNode, "mblSpriteIcon");
-			}
-		};
-
-		this.createDomButton = function(/*DomNode*/refNode, /*Object?*/style, /*DomNode?*/toNode){
-			// summary:
-			//		Creates a DOM button.
-			// description:
-			//		DOM button is a simple graphical object that consists of one or
-			//		more nested DIV elements with some CSS styling. It can be used
-			//		in place of an icon image on ListItem, IconItem, and so on.
-			//		The kind of DOM button to create is given as a class name of
-			//		refNode. The number of DIVs to create is searched from the style
-			//		sheets in the page. However, if the class name has a suffix that
-			//		starts with an underscore, like mblDomButtonGoldStar_5, then the
-			//		suffixed number is used instead. A class name for DOM button
-			//		must starts with 'mblDomButton'.
-			// refNode:
-			//		A node that has a DOM button class name.
-			// style:
-			//		A hash object to set styles to the node.
-			// toNode:
-			//		A root node to create a DOM button. If omitted, refNode is used.
-
-			if(!this._domButtons){
-				if(has("webkit")){
-					var findDomButtons = function(sheet, dic){
-						// summary:
-						//		Searches the style sheets for DOM buttons.
-						// description:
-						//		Returns a key-value pair object whose keys are DOM
-						//		button class names and values are the number of DOM
-						//		elements they need.
-						var i, j;
-						if(!sheet){
-							var _dic = {};
-							var ss = win.doc.styleSheets;
-							for (i = 0; i < ss.length; i++){
-								ss[i] && findDomButtons(ss[i], _dic);
-							}
-							return _dic;
-						}
-						var rules = sheet.cssRules || [];
-						for (i = 0; i < rules.length; i++){
-							var rule = rules[i];
-							if(rule.href && rule.styleSheet){
-								findDomButtons(rule.styleSheet, dic);
-							}else if(rule.selectorText){
-								var sels = rule.selectorText.split(/,/);
-								for (j = 0; j < sels.length; j++){
-									var sel = sels[j];
-									var n = sel.split(/>/).length - 1;
-									if(sel.match(/(mblDomButton\w+)/)){
-										var cls = RegExp.$1;
-										if(!dic[cls] || n > dic[cls]){
-											dic[cls] = n;
-										}
-									}
-								}
-							}
-						}
-						return dic;
-					}
-					this._domButtons = findDomButtons();
-				}else{
-					this._domButtons = {};
-				}
-			}
-
-			var s = refNode.className;
-			var node = toNode || refNode;
-			if(s.match(/(mblDomButton\w+)/) && s.indexOf("/") === -1){
-				var btnClass = RegExp.$1;
-				var nDiv = 4;
-				if(s.match(/(mblDomButton\w+_(\d+))/)){
-					nDiv = RegExp.$2 - 0;
-				}else if(this._domButtons[btnClass] !== undefined){
-					nDiv = this._domButtons[btnClass];
-				}
-				var props = null;
-				if(has("bb") && config["mblBBBoxShadowWorkaround"] !== false){
-					// Removes box-shadow because BlackBerry incorrectly renders it.
-					props = {style:"-webkit-box-shadow:none"};
-				}
-				for(var i = 0, p = node; i < nDiv; i++){
-					p = p.firstChild || domConstruct.create("div", props, p);
-				}
-				if(toNode){
-					setTimeout(function(){
-						domClass.remove(refNode, btnClass);
-					}, 0);
-					domClass.add(toNode, btnClass);
-				}
-			}else if(s.indexOf(".") !== -1){ // file name
-				domConstruct.create("img", {src:s}, node);
-			}else{
-				return null;
-			}
-			domClass.add(node, "mblDomButton");
-			!!style && domStyle.set(node, style);
-			return node;
-		};
-
-		this.createIcon = function(/*String*/icon, /*String?*/iconPos, /*DomNode?*/node, /*String?*/title, /*DomNode?*/parent, /*DomNode?*/refNode, /*String?*/pos){
-			// summary:
-			//		Creates or updates an icon node
-			// description:
-			//		If node exists, updates the existing node. Otherwise, creates a new one.
-			// icon:
-			//		Path for an image, or DOM button class name.
-			title = title || "";
-			if(icon && icon.indexOf("mblDomButton") === 0){
-				// DOM button
-				if(!node){
-					node = domConstruct.create("div", null, refNode || parent, pos);
-				}else{
-					if(node.className.match(/(mblDomButton\w+)/)){
-						domClass.remove(node, RegExp.$1);
-					}
-				}
-				node.title = title;
-				domClass.add(node, icon);
-				this.createDomButton(node);
-			}else if(icon && icon !== "none"){
-				// Image
-				if(!node || node.nodeName !== "IMG"){
-					node = domConstruct.create("img", {
-						alt: title
-					}, refNode || parent, pos);
-				}
-				node.src = (icon || "").replace("${theme}", dm.currentTheme);
-				this.setupSpriteIcon(node, iconPos);
-				if(iconPos && parent){
-					var arr = iconPos.split(/[ ,]/);
-					domStyle.set(parent, {
-						position: "relative",
-						width: arr[2] + "px",
-						height: arr[3] + "px"
-					});
-					domClass.add(parent, "mblSpriteIconParent");
-				}
-				connect.connect(node, "ondragstart", event, "stop");
-			}
-			return node;
-		};
-
-		this.iconWrapper = false;
-		this.setIcon = function(/*String*/icon, /*String*/iconPos, /*DomNode*/iconNode, /*String?*/alt, /*DomNode*/parent, /*DomNode?*/refNode, /*String?*/pos){
-			// summary:
-			//		A setter function to set an icon.
-			// description:
-			//		This function is intended to be used by icon setters (e.g. _setIconAttr)
-			// icon:
-			//		An icon path or a DOM button class name.
-			// iconPos:
-			//		The position of an aggregated icon. IconPos is comma separated
-			//		values like top,left,width,height (ex. "0,0,29,29").
-			// iconNode:
-			//		An icon node.
-			// alt:
-			//		An alt text for the icon image.
-			// parent:
-			//		Parent node of the icon.
-			// refNode:
-			//		A node reference to place the icon.
-			// pos:
-			//		The position of the icon relative to refNode.
-			if(!parent || !icon && !iconNode){ return null; }
-			if(icon && icon !== "none"){ // create or update an icon
-				if(!this.iconWrapper && icon.indexOf("mblDomButton") !== 0 && !iconPos){ // image
-					if(iconNode && iconNode.tagName === "DIV"){
-						domConstruct.destroy(iconNode);
-						iconNode = null;
-					}
-					iconNode = this.createIcon(icon, null, iconNode, alt, parent, refNode, pos);
-					domClass.add(iconNode, "mblImageIcon");
-				}else{ // sprite or DOM button
-					if(iconNode && iconNode.tagName === "IMG"){
-						domConstruct.destroy(iconNode);
-						iconNode = null;
-					}
-					iconNode && domConstruct.empty(iconNode);
-					if(!iconNode){
-						iconNode = domConstruct.create("div", null, refNode || parent, pos);
-					}
-					this.createIcon(icon, iconPos, null, null, iconNode);
-					if(alt){
-						iconNode.title = alt;
-					}
-				}
-				domClass.remove(parent, "mblNoIcon");
-				return iconNode;
-			}else{ // clear the icon
-				domConstruct.destroy(iconNode);
-				domClass.add(parent, "mblNoIcon");
-				return null;
-			}
-		};
-	};
-
-	// Return singleton.  (TODO: can we replace IconUtils class and singleton w/a simple hash of functions?)
-	return new IconUtils();
-});
-
-},
-'dojox/mobile/RoundRect':function(){
-define([
-	"dojo/_base/declare",
-	"dojo/dom-class",
-	"./Container"
-], function(declare, domClass, Container){
-
-	// module:
-	//		dojox/mobile/RoundRect
-
-	return declare("dojox.mobile.RoundRect", Container, {
-		// summary:
-		//		A simple round rectangle container.
-		// description:
-		//		RoundRect is a simple round rectangle container for any HTML
-		//		and/or widgets. You can achieve the same appearance by just
-		//		applying the -webkit-border-radius style to a div tag. However,
-		//		if you use RoundRect, you can get a round rectangle even on
-		//		non-CSS3 browsers such as (older) IE.
-
-		// shadow: [const] Boolean
-		//		If true, adds a shadow effect to the container element by adding
-		//		the CSS class "mblShadow" to widget's domNode. The default value
-		//		is false. Note that changing the value of the property after
-		//		the widget creation has no effect.
-		shadow: false,
-
-		/* internal properties */	
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblRoundRect",
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			if(this.shadow){
-				domClass.add(this.domNode, "mblShadow");
-			}
-		}
-	});
-});
-
-},
-'dojox/mobile/Container':function(){
-define([
-	"dojo/_base/declare",
-	"dijit/_Container",
-	"./Pane"
-], function(declare, Container, Pane){
-
-	// module:
-	//		dojox/mobile/Container
-
-	return declare("dojox.mobile.Container", [Pane, Container], {
-		// summary:
-		//		A simple container-type widget.
-		// description:
-		//		Container is a simple general-purpose container widget.
-		//		It is a widget, but can be regarded as a simple `<div>` element.
-
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblContainer"
-	});
-});
-
-},
-'dojox/mobile/Pane':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/declare",
-	"dijit/_Contained",
-	"dijit/_WidgetBase"
-], function(array, declare, Contained, WidgetBase){
-
-	// module:
-	//		dojox/mobile/Pane
-
-	return declare("dojox.mobile.Pane", [WidgetBase, Contained], {
-		// summary:
-		//		A simple pane widget.
-		// description:
-		//		Pane is a simple general-purpose pane widget.
-		//		It is a widget, but can be regarded as a simple `<div>` element.
-
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblPane",
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			if(!this.containerNode){
-				// set containerNode so that getChildren() works
-				this.containerNode = this.domNode;
-			}
-		},
-
-		resize: function(){
-			// summary:
-			//		Calls resize() of each child widget.
-			array.forEach(this.getChildren(), function(child){
-				if(child.resize){ child.resize(); }
-			});
-		}
-	});
-});
-
-},
-'dojox/mobile/RoundRectCategory':function(){
-define([
-	"dojo/_base/declare",
-	"dojo/_base/window",
-	"dojo/dom-construct",
-	"dijit/_Contained",
-	"dijit/_WidgetBase",
-	"dojo/has",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/RoundRectCategory"
-], function(declare, win, domConstruct, Contained, WidgetBase, has, BidiRoundRectCategory){
-
-	// module:
-	//		dojox/mobile/RoundRectCategory
-
-	var RoundRectCategory = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiRoundRectCategory" : "dojox.mobile.RoundRectCategory", [WidgetBase, Contained], {
-		// summary:
-		//		A category header for a rounded rectangle list.
-
-		// label: String
-		//		A label of the category. If the label is not specified,
-		//		innerHTML is used as a label.
-		label: "",
-
-		// tag: String
-		//		A name of html tag to create as domNode.
-		tag: "h2",
-
-		/* internal properties */	
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblRoundRectCategory",
-
-		buildRendering: function(){
-			var domNode = this.domNode = this.containerNode = this.srcNodeRef || domConstruct.create(this.tag);
-			this.inherited(arguments);
-			if(!this.label && domNode.childNodes.length === 1 && domNode.firstChild.nodeType === 3){
-				// if it has only one text node, regard it as a label
-				this.label = domNode.firstChild.nodeValue;
-			}
-		},
-
-		_setLabelAttr: function(/*String*/label){
-			// summary:
-			//		Sets the category header text.
-			// tags:
-			//		private
-			this.label = label;
-			this.domNode.innerHTML = this._cv ? this._cv(label) : label;
-		}
-	});
-
-	return has("dojo-bidi") ? declare("dojox.mobile.RoundRectCategory", [RoundRectCategory, BidiRoundRectCategory]) : RoundRectCategory;	
-});
-
-},
-'dojox/mobile/EdgeToEdgeCategory':function(){
-define([
-	"dojo/_base/declare",
-	"./RoundRectCategory"
-], function(declare, RoundRectCategory){
-
-	// module:
-	//		dojox/mobile/EdgeToEdgeCategory
-
-	return declare("dojox.mobile.EdgeToEdgeCategory", RoundRectCategory, {
-		// summary:
-		//		A category header for an edge-to-edge list.
-		buildRendering: function(){
-			this.inherited(arguments);
-			this.domNode.className = "mblEdgeToEdgeCategory";
-
-			if(this.type && this.type == "long"){
-				this.domNode.className += " mblEdgeToEdgeCategoryLong";
-			}
-		}
-	});
-});
-
-},
-'dojox/mobile/RoundRectList':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/declare",
-	"dojo/_base/event",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom-construct",
-	"dojo/dom-attr",
-	"dijit/_Contained",
-	"dijit/_Container",
-	"dijit/_WidgetBase"
-], function(array, declare, event, lang, win, domConstruct, domAttr, Contained, Container, WidgetBase){
-
-	// module:
-	//		dojox/mobile/RoundRectList
-
-	return declare("dojox.mobile.RoundRectList", [WidgetBase, Container, Contained], {
-		// summary:
-		//		A rounded rectangle list.
-		// description:
-		//		RoundRectList is a rounded rectangle list, which can be used to
-		//		display a group of items. Each item must be a dojox/mobile/ListItem.
-
-		// transition: String
-		//		The default animated transition effect for child items.
-		transition: "slide",
-
-		// iconBase: String
-		//		The default icon path for child items.
-		iconBase: "",
-
-		// iconPos: String
-		//		The default icon position for child items.
-		iconPos: "",
-
-		// select: String
-		//		Selection mode of the list. The check mark is shown for the
-		//		selected list item(s). The value can be "single", "multiple", or "".
-		//		If "single", there can be only one selected item at a time.
-		//		If "multiple", there can be multiple selected items at a time.
-		//		If "", the check mark is not shown.
-		select: "",
-
-		// stateful: Boolean
-		//		If true, the last selected item remains highlighted.
-		stateful: false,
-
-		// syncWithViews: [const] Boolean
-		//		If true, this widget listens to view transition events to be
-		//		synchronized with view's visibility.
-		//		Note that changing the value of the property after the widget
-		//		creation has no effect.
-		syncWithViews: false,
-
-		// editable: [const] Boolean
-		//		If true, the list can be reordered.
-		//		Note that changing the value of the property after the widget
-		//		creation has no effect.
-		editable: false,
-
-		// tag: String
-		//		A name of html tag to create as domNode.
-		tag: "ul",
-
-		/* internal properties */
-		// editableMixinClass: String
-		//		The name of the mixin class.
-		editableMixinClass: "dojox/mobile/_EditableListMixin",
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblRoundRectList",
-		
-		// filterBoxClass: String
-		//		The name of the CSS class added to the DOM node inside which is placed the 
-		//		dojox/mobile/SearchBox created when mixing dojox/mobile/FilteredListMixin.
-		//		The default value is "mblFilteredRoundRectListSearchBox".  
-		filterBoxClass: "mblFilteredRoundRectListSearchBox",
-
-		buildRendering: function(){
-			this.domNode = this.srcNodeRef || domConstruct.create(this.tag);
-			if(this.select){
-				domAttr.set(this.domNode, "role", "listbox");
-				if(this.select === "multiple"){
-					domAttr.set(this.domNode, "aria-multiselectable", "true");
-				}
-			}
-			this.inherited(arguments);
-		},
-
-		postCreate: function(){
-			if(this.editable){
-				require([this.editableMixinClass], lang.hitch(this, function(module){
-					declare.safeMixin(this, new module());
-				}));
-			}
-			this.connect(this.domNode, "onselectstart", event.stop);
-
-			if(this.syncWithViews){ // see also TabBar#postCreate
-				var f = function(view, moveTo, dir, transition, context, method){
-					var child = array.filter(this.getChildren(), function(w){
-						return w.moveTo === "#" + view.id || w.moveTo === view.id; })[0];
-					if(child){ child.set("selected", true); }
-				};
-				this.subscribe("/dojox/mobile/afterTransitionIn", f);
-				this.subscribe("/dojox/mobile/startView", f);
-			}
-		},
-
-		resize: function(){
-			// summary:
-			//		Calls resize() of each child widget.
-			array.forEach(this.getChildren(), function(child){
-				if(child.resize){ child.resize(); }
-			});
-		},
-
-		onCheckStateChanged: function(/*Widget*//*===== listItem, =====*/ /*String*//*===== newState =====*/){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called when the check state has been changed.
-		},
-
-		_setStatefulAttr: function(stateful){
-			// tags:
-			//		private
-			this._set("stateful", stateful);
-			this.selectOne = stateful;
-			array.forEach(this.getChildren(), function(child){
-				child.setArrow && child.setArrow();
-			});
-		},
-
-		deselectItem: function(/*dojox/mobile/ListItem*/item){
-			// summary:
-			//		Deselects the given item.
-			item.set("selected", false);
-		},
-
-		deselectAll: function(){
-			// summary:
-			//		Deselects all the items.
-			array.forEach(this.getChildren(), function(child){
-				child.set("selected", false);
-			});
-		},
-
-		selectItem: function(/*ListItem*/item){
-			// summary:
-			//		Selects the given item.
-			item.set("selected", true);
-		}
-	});
-});
-
-},
-'dojox/mobile/EdgeToEdgeList':function(){
-define([
-	"dojo/_base/declare",
-	"./RoundRectList"
-], function(declare, RoundRectList){
-
-	// module:
-	//		dojox/mobile/EdgeToEdgeCategory
-
-	return declare("dojox.mobile.EdgeToEdgeList", RoundRectList, {
-		// summary:
-		//		An edge-to-edge layout list.
-		// description:
-		//		EdgeToEdgeList is an edge-to-edge layout list, which displays
-		//		all items in equally-sized rows. Each item must be a
-		//		dojox/mobile/ListItem.
-		
-		// filterBoxClass: String
-		//		The name of the CSS class added to the DOM node inside which is placed the 
-		//		dojox/mobile/SearchBox created when mixing dojox/mobile/FilteredListMixin.
-		//		The default value is "mblFilteredEdgeToEdgeListSearchBox". 
-		filterBoxClass: "mblFilteredEdgeToEdgeListSearchBox",
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			this.domNode.className = "mblEdgeToEdgeList";
-		}
-	});
-});
-
-},
-'dojox/mobile/ListItem':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/declare",
-	"dojo/_base/lang",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-style",
-	"dojo/dom-attr",
-	"dijit/registry",
-	"dijit/_WidgetBase",
-	"./iconUtils",
-	"./_ItemBase",
-	"./ProgressIndicator",
-	"dojo/has",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/ListItem"
-], function(array, declare, lang, domClass, domConstruct, domStyle, domAttr, registry, WidgetBase, iconUtils, ItemBase, ProgressIndicator, has,  BidiListItem){
-
-	// module:
-	//		dojox/mobile/ListItem
-
-	var ListItem = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiListItem" : "dojox.mobile.ListItem", ItemBase, {
-		// summary:
-		//		An item of either RoundRectList or EdgeToEdgeList.
-		// description:
-		//		ListItem represents an item of either RoundRectList or
-		//		EdgeToEdgeList. There are three ways to move to a different view:
-		//		moveTo, href, and url. You can choose only one of them.
-		//
-		//		A child DOM node (or widget) can have the layout attribute,
-		//		whose value is "left", "right", or "center". Such nodes will be
-		//		aligned as specified.
-		// example:
-		// |	<li data-dojo-type="dojox.mobile.ListItem">
-		// |		<div layout="left">Left Node</div>
-		// |		<div layout="right">Right Node</div>
-		// |		<div layout="center">Center Node</div>
-		// |	</li>
-		//
-		//		Note that even if you specify variableHeight="true" for the list
-		//		and place a tall object inside the layout node as in the example
-		//		below, the layout node does not expand as you may expect,
-		//		because layout node is aligned using float:left, float:right, or
-		//		position:absolute.
-		// example:
-		// |	<li data-dojo-type="dojox.mobile.ListItem" variableHeight="true">
-		// |		<div layout="left"><img src="large-picture.jpg"></div>
-		// |	</li>
-
-		// rightText: String
-		//		A right-aligned text to display on the item.
-		rightText: "",
-
-		// rightIcon: String
-		//		An icon to display at the right hand side of the item. The value
-		//		can be either a path for an image file or a class name of a DOM
-		//		button.
-		rightIcon: "",
-
-		// rightIcon2: String
-		//		An icon to display at the left of the rightIcon. The value can
-		//		be either a path for an image file or a class name of a DOM
-		//		button.
-		rightIcon2: "",
-
-		// deleteIcon: String
-		//		A delete icon to display at the left of the item. The value can
-		//		be either a path for an image file or a class name of a DOM
-		//		button.
-		deleteIcon: "",
-
-		// anchorLabel: Boolean
-		//		If true, the label text becomes a clickable anchor text. When
-		//		the user clicks on the text, the onAnchorLabelClicked handler is
-		//		called. You can override or connect to the handler and implement
-		//		any action. The handler has no default action.
-		anchorLabel: false,
-
-		// noArrow: Boolean
-		//		If true, the right hand side arrow is not displayed.
-		noArrow: false,
-
-		// checked: Boolean
-		//		If true, a check mark is displayed at the right of the item.
-		checked: false,
-
-		// arrowClass: String
-		//		An icon to display as an arrow. The value can be either a path
-		//		for an image file or a class name of a DOM button.
-		arrowClass: "",
-
-		// checkClass: String
-		//		An icon to display as a check mark. The value can be either a
-		//		path for an image file or a class name of a DOM button.
-		checkClass: "",
-
-		// uncheckClass: String
-		//		An icon to display as an uncheck mark. The value can be either a
-		//		path for an image file or a class name of a DOM button.
-		uncheckClass: "",
-
-		// variableHeight: Boolean
-		//		If true, the height of the item varies according to its content.
-		variableHeight: false,
-
-		// rightIconTitle: String
-		//		An alt text for the right icon.
-		rightIconTitle: "",
-
-		// rightIcon2Title: String
-		//		An alt text for the right icon2.
-		rightIcon2Title: "",
-
-		// header: Boolean
-		//		If true, this item is rendered as a category header.
-		header: false,
-
-		// tag: String
-		//		A name of html tag to create as domNode.
-		tag: "li",
-
-		// busy: Boolean
-		//		If true, a progress indicator spins.
-		busy: false,
-
-		// progStyle: String
-		//		A css class name to add to the progress indicator.
-		progStyle: "",
-
-		/* internal properties */	
-		// The following properties are overrides of those in _ItemBase.
-		paramsToInherit: "variableHeight,transition,deleteIcon,icon,rightIcon,rightIcon2,uncheckIcon,arrowClass,checkClass,uncheckClass,deleteIconTitle,deleteIconRole",
-		baseClass: "mblListItem",
-
-		_selStartMethod: "touch",
-		_selEndMethod: "timer",
-		_delayedSelection: true,
-
-		_selClass: "mblListItemSelected",
-
-		buildRendering: function(){
-			this._templated = !!this.templateString; // true if this widget is templated
-			if(!this._templated){
-				// Create root node if it wasn't created by _TemplatedMixin
-				this.domNode = this.containerNode = this.srcNodeRef || domConstruct.create(this.tag);
-			}
-			this.inherited(arguments);
-
-			if(this.selected){
-				domClass.add(this.domNode, this._selClass);
-			}
-			if(this.header){
-				domClass.replace(this.domNode, "mblEdgeToEdgeCategory", this.baseClass);
-			}
-
-			if(!this._templated){
-				this.labelNode =
-					domConstruct.create("div", {className:"mblListItemLabel"});
-				var ref = this.srcNodeRef;
-				if(ref && ref.childNodes.length === 1 && ref.firstChild.nodeType === 3){
-					// if ref has only one text node, regard it as a label
-					this.labelNode.appendChild(ref.firstChild);
-				}
-				this.domNode.appendChild(this.labelNode);
-			}
-			this._layoutChildren = [];
-		},
-
-		startup: function(){
-			if(this._started){ return; }
-			var parent = this.getParent();
-			var opts = this.getTransOpts();
-			// When using a template, labelNode may be created via an attach point.
-			// The attach points are not yet set when ListItem.buildRendering() 
-			// executes, hence the need to use them in startup().
-			if((!this._templated || this.labelNode) && this.anchorLabel){
-				this.labelNode.style.display = "inline"; // to narrow the text region
-				this.labelNode.style.cursor = "pointer";
-				this.connect(this.labelNode, "onclick", "_onClick");
-				this.onTouchStart = function(e){
-					return (e.target !== this.labelNode);
-				};
-			}
-			if(opts.moveTo || opts.href || opts.url || this.clickable || (parent && parent.select)){
-				this.connect(this.domNode, "onkeydown", "_onClick"); // for desktop browsers
-			}else{
-				this._handleClick = false;
-			}
-
-			this.inherited(arguments);
-			
-			if(domClass.contains(this.domNode, "mblVariableHeight")){
-				this.variableHeight = true;
-			}
-			if(this.variableHeight){
-				domClass.add(this.domNode, "mblVariableHeight");
-				this.defer("layoutVariableHeight");
-			}
-
-			if(!this._isOnLine){
-				this._isOnLine = true;
-				this.set({ 
-					// retry applying the attributes for which the custom setter delays the actual 
-					// work until _isOnLine is true
-					icon: this._pending_icon !== undefined ? this._pending_icon : this.icon,
-					deleteIcon: this._pending_deleteIcon !== undefined ? this._pending_deleteIcon : this.deleteIcon,
-					rightIcon: this._pending_rightIcon !== undefined ? this._pending_rightIcon : this.rightIcon,
-					rightIcon2: this._pending_rightIcon2 !== undefined ? this._pending_rightIcon2 : this.rightIcon2,
-					uncheckIcon: this._pending_uncheckIcon !== undefined ? this._pending_uncheckIcon : this.uncheckIcon 
-				});
-				// Not needed anymore (this code executes only once per life cycle):
-				delete this._pending_icon;
-				delete this._pending_deleteIcon;
-				delete this._pending_rightIcon;
-				delete this._pending_rightIcon2;
-				delete this._pending_uncheckIcon;
-			}
-			if(parent && parent.select){
-				// retry applying the attributes for which the custom setter delays the actual 
-				// work until _isOnLine is true. 
-				this.set("checked", this._pendingChecked !== undefined ? this._pendingChecked : this.checked);
-				domAttr.set(this.domNode, "role", "option");
-				if(this._pendingChecked || this.checked){
-					domAttr.set(this.domNode, "aria-selected", "true");
-				}
-				// Not needed anymore (this code executes only once per life cycle):
-				delete this._pendingChecked; 
-			}
-			this.setArrow();
-			this.layoutChildren();
-		},
-
-		_updateHandles: function(){
-			// tags:
-			//		private
-			var parent = this.getParent();
-			var opts = this.getTransOpts();
-			if(opts.moveTo || opts.href || opts.url || this.clickable || (parent && parent.select)){
-				if(!this._keydownHandle){
-					this._keydownHandle = this.connect(this.domNode, "onkeydown", "_onClick"); // for desktop browsers
-				}
-				this._handleClick = true;
-			}else{
-				if(this._keydownHandle){
-					this.disconnect(this._keydownHandle);
-					this._keydownHandle = null;
-				}
-				this._handleClick = false;
-			}
-			this.inherited(arguments);
-		},
-
-		layoutChildren: function(){
-			var centerNode;
-			array.forEach(this.domNode.childNodes, function(n){
-				if(n.nodeType !== 1){ return; }
-				var layout = n.getAttribute("layout") || // TODO: Remove the non-HTML5-compliant attribute in 2.0
-					n.getAttribute("data-mobile-layout") || 
-					(registry.byNode(n) || {}).layout;
-				if(layout){ 
-					domClass.add(n, "mblListItemLayout" +
-						layout.charAt(0).toUpperCase() + layout.substring(1));
-					this._layoutChildren.push(n);
-					if(layout === "center"){ centerNode = n; }
-				}
-			}, this);
-			if(centerNode){
-				this.domNode.insertBefore(centerNode, this.domNode.firstChild);
-			}
-		},
-
-		resize: function(){
-			if(this.variableHeight){
-				this.layoutVariableHeight();
-			}
-
-			// labelNode may not exist only when using a template (if not created by an attach point)
-			if(!this._templated || this.labelNode){
-				// If labelNode is empty, shrink it so as not to prevent user clicks.
-				this.labelNode.style.display = this.labelNode.firstChild ? "block" : "inline";
-			}
-		},
-
-		_onTouchStart: function(e){
-			// tags:
-			//		private
-			if(e.target.getAttribute("preventTouch") || // TODO: Remove the non-HTML5-compliant attribute in 2.0
-				e.target.getAttribute("data-mobile-prevent-touch") ||
-				(registry.getEnclosingWidget(e.target) || {}).preventTouch){
-				return;
-			}
-			this.inherited(arguments);
-		},
-
-		_onClick: function(e){
-			// summary:
-			//		Internal handler for click events.
-			// tags:
-			//		private
-			if(this.getParent().isEditing || e && e.type === "keydown" && e.keyCode !== 13){ return; }
-			if(this.onClick(e) === false){ return; } // user's click action
-			var n = this.labelNode;
-			// labelNode may not exist only when using a template 
-			if((this._templated || n) && this.anchorLabel && e.currentTarget === n){
-				domClass.add(n, "mblListItemLabelSelected");
-				this.defer(function(){
-					domClass.remove(n, "mblListItemLabelSelected");
-				}, this._duration);
-				this.onAnchorLabelClicked(e);
-				return;
-			}
-			var parent = this.getParent();
-			if(parent.select){
-				if(parent.select === "single"){
-					if(!this.checked){
-						this.set("checked", true);
-					}
-				}else if(parent.select === "multiple"){
-					this.set("checked", !this.checked);
-				}
-			}
-			this.defaultClickAction(e);
-		},
-
-		onClick: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		User-defined function to handle clicks.
-			// tags:
-			//		callback
-		},
-
-		onAnchorLabelClicked: function(e){
-			// summary:
-			//		Stub function to connect to from your application.
-		},
-
-		layoutVariableHeight: function(){
-			// summary:
-			//		Lays out the current item with variable height.
-			var h = this.domNode.offsetHeight;
-			if(h === this.domNodeHeight){ return; }
-			this.domNodeHeight = h;
-			array.forEach(this._layoutChildren.concat([
-				this.rightTextNode,
-				this.rightIcon2Node,
-				this.rightIconNode,
-				this.uncheckIconNode,
-				this.iconNode,
-				this.deleteIconNode,
-				this.knobIconNode
-			]), function(n){
-				if(n){
-					var domNode = this.domNode;
-					var f = function(){
-						var t = Math.round((domNode.offsetHeight - n.offsetHeight) / 2) -
-							domStyle.get(domNode, "paddingTop");
-						n.style.marginTop = t + "px";
-					}
-					if(n.offsetHeight === 0 && n.tagName === "IMG"){
-						n.onload = f;
-					}else{
-						f();
-					}
-				}
-			}, this);
-		},
-
-		setArrow: function(){
-			// summary:
-			//		Sets the arrow icon if necessary.
-			if(this.checked){ return; }
-			var c = "";
-			var parent = this.getParent();
-			var opts = this.getTransOpts();
-			if(opts.moveTo || opts.href || opts.url || this.clickable){
-				if(!this.noArrow && !(parent && parent.selectOne)){
-					c = this.arrowClass || "mblDomButtonArrow";
-					domAttr.set(this.domNode, "role", "button");
-				}
-			}
-			if(c){
-				this._setRightIconAttr(c);
-			}
-		},
-
-		_findRef: function(/*String*/type){
-			// summary:
-			//		Find an appropriate position to insert a new child node.
-			// tags:
-			//		private
-			var i, node, list = ["deleteIcon", "icon", "rightIcon", "uncheckIcon", "rightIcon2", "rightText"];
-			for(i = array.indexOf(list, type) + 1; i < list.length; i++){
-				node = this[list[i] + "Node"];
-				if(node){ return node; }
-			}
-			for(i = list.length - 1; i >= 0; i--){
-				node = this[list[i] + "Node"];
-				if(node){ return node.nextSibling; }
-			}
-			return this.domNode.firstChild;
-		},
-		
-		_setIcon: function(/*String*/icon, /*String*/type){
-			// tags:
-			//		private
-			if(!this._isOnLine){
-				// record the value to be able to reapply it (see the code in the startup method)
-				this["_pending_" + type] = icon;
-				return; 
-			} // icon may be invalid because inheritParams is not called yet
-			this._set(type, icon);
-			this[type + "Node"] = iconUtils.setIcon(icon, this[type + "Pos"],
-				this[type + "Node"], this[type + "Title"] || this.alt, this.domNode, this._findRef(type), "before");
-			if(this[type + "Node"]){
-				var cap = type.charAt(0).toUpperCase() + type.substring(1);
-				domClass.add(this[type + "Node"], "mblListItem" + cap);
-			}
-			var role = this[type + "Role"];
-			if(role){
-				this[type + "Node"].setAttribute("role", role);
-			}
-		},
-
-		_setDeleteIconAttr: function(/*String*/icon){
-			// tags:
-			//		private
-			this._setIcon(icon, "deleteIcon");
-		},
-
-		_setIconAttr: function(icon){
-			// tags:
-			//		private
-			this._setIcon(icon, "icon");
-		},
-
-		_setRightTextAttr: function(/*String*/text){
-			// tags:
-			//		private
-			if(!this._templated && !this.rightTextNode){
-				// When using a template, let the template create the element.
-				this.rightTextNode = domConstruct.create("div", {className:"mblListItemRightText"}, this.labelNode, "before");
-			}
-			this.rightText = text;
-			this.rightTextNode.innerHTML = this._cv ? this._cv(text) : text;
-		},
-
-		_setRightIconAttr: function(/*String*/icon){
-			// tags:
-			//		private
-			this._setIcon(icon, "rightIcon");
-		},
-
-		_setUncheckIconAttr: function(/*String*/icon){
-			// tags:
-			//		private
-			this._setIcon(icon, "uncheckIcon");
-		},
-
-		_setRightIcon2Attr: function(/*String*/icon){
-			// tags:
-			//		private
-			this._setIcon(icon, "rightIcon2");
-		},
-
-		_setCheckedAttr: function(/*Boolean*/checked){
-			// tags:
-			//		private
-			if(!this._isOnLine){
-				// record the value to be able to reapply it (see the code in the startup method)
-				this._pendingChecked = checked; 
-				return; 
-			} // icon may be invalid because inheritParams is not called yet
-			var parent = this.getParent();
-			if(parent && parent.select === "single" && checked){
-				array.forEach(parent.getChildren(), function(child){
-					child !== this && child.checked && child.set("checked", false) && domAttr.set(child.domNode, "aria-selected", "false");
-				}, this);
-			}
-			this._setRightIconAttr(this.checkClass || "mblDomButtonCheck");
-			this._setUncheckIconAttr(this.uncheckClass);
-
-			domClass.toggle(this.domNode, "mblListItemChecked", checked);
-			domClass.toggle(this.domNode, "mblListItemUnchecked", !checked);
-			domClass.toggle(this.domNode, "mblListItemHasUncheck", !!this.uncheckIconNode);
-			this.rightIconNode.style.position = (this.uncheckIconNode && !checked) ? "absolute" : "";
-
-			if(parent && this.checked !== checked){
-				parent.onCheckStateChanged(this, checked);
-			}
-			this._set("checked", checked);
-			domAttr.set(this.domNode, "aria-selected", checked ? "true" : "false");
-		},
-
-		_setBusyAttr: function(/*Boolean*/busy){
-			// tags:
-			//		private
-			var prog = this._prog;
-			if(busy){
-				if(!this._progNode){
-					this._progNode = domConstruct.create("div", {className:"mblListItemIcon"});
-					prog = this._prog = new ProgressIndicator({size:25, center:false, removeOnStop:false});
-					domClass.add(prog.domNode, this.progStyle);
-					this._progNode.appendChild(prog.domNode);
-				}
-				if(this.iconNode){
-					this.domNode.replaceChild(this._progNode, this.iconNode);
-				}else{
-					domConstruct.place(this._progNode, this._findRef("icon"), "before");
-				}
-				prog.start();
-			}else if(this._progNode){
-				if(this.iconNode){
-					this.domNode.replaceChild(this.iconNode, this._progNode);
-				}else{
-					this.domNode.removeChild(this._progNode);
-				}
-				prog.stop();
-			}
-			this._set("busy", busy);
-		},
-
-		_setSelectedAttr: function(/*Boolean*/selected){
-			// summary:
-			//		Makes this widget in the selected or unselected state.
-			// tags:
-			//		private
-			this.inherited(arguments);
-			domClass.toggle(this.domNode, this._selClass, selected);
-		},
-		
-		_setClickableAttr: function(/*Boolean*/clickable){
-			// tags:
-			//		private
-			this._set("clickable", clickable);
-			this._updateHandles();
-		},
-		
-		_setMoveToAttr: function(/*String*/moveTo){
-			// tags:
-			//		private
-			this._set("moveTo", moveTo);
-			this._updateHandles();
-		},
-		
-		_setHrefAttr: function(/*String*/href){
-			// tags:
-			//		private
-			this._set("href", href);
-			this._updateHandles();
-		},
-		
-		_setUrlAttr: function(/*String*/url){
-			// tags:
-			//		private
-			this._set("url", url);
-			this._updateHandles();
-		}
-	});
-	
-	ListItem.ChildWidgetProperties = {
-		// summary:
-		//		These properties can be specified for the children of a dojox/mobile/ListItem.
-
-		// layout: String
-		//		Specifies the position of the ListItem child ("left", "center" or "right").
-		layout: "",
-
-		// preventTouch: Boolean
-		//		Disables touch events on the ListItem child.
-		preventTouch: false
-	};
-	
-	// Since any widget can be specified as a ListItem child, mix ChildWidgetProperties
-	// into the base widget class.  (This is a hack, but it's effective.)
-	// This is for the benefit of the parser.   Remove for 2.0.  Also, hide from doc viewer.
-	lang.extend(WidgetBase, /*===== {} || =====*/ ListItem.ChildWidgetProperties);
-
-	return has("dojo-bidi") ? declare("dojox.mobile.ListItem", [ListItem, BidiListItem]) : ListItem;	
-});
-
-},
-'dojox/mobile/Switch':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/connect",
-	"dojo/_base/declare",
-	"dojo/_base/event",
-	"dojo/_base/window",
-	"dojo/dom-class",
-	"dojo/dom-construct",
-	"dojo/dom-style",
-	"dojo/dom-attr",
-	"dojo/touch",
-	"dijit/_Contained",
-	"dijit/_WidgetBase",
-	"./sniff", 
-	"./_maskUtils",
-	"./common",
-	"dojo/has!dojo-bidi?dojox/mobile/bidi/Switch"
-], function(array, connect, declare, event, win, domClass, domConstruct, domStyle, domAttr, touch, Contained, WidgetBase, has, maskUtils, dm, BidiSwitch){
-
-	// module:
-	//		dojox/mobile/Switch
-
-	var Switch = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiSwitch" : "dojox.mobile.Switch", [WidgetBase, Contained],{
-		// summary:
-		//		A toggle switch with a sliding knob.
-		// description:
-		//		Switch is a toggle switch with a sliding knob. You can either
-		//		tap or slide the knob to toggle the switch. The onStateChanged
-		//		handler is called when the switch is manipulated.
-
-		// value: String
-		//		The initial state of the switch: "on" or "off". The default
-		//		value is "on".
-		value: "on",
-
-		// name: String
-		//		A name for a hidden input field, which holds the current value.
-		name: "",
-
-		// leftLabel: String
-		//		The left-side label of the switch.
-		leftLabel: "ON",
-
-		// rightLabel: String
-		//		The right-side label of the switch.
-		rightLabel: "OFF",
-
-		// shape: String
-		//		The shape of the switch.
-		//		"mblSwDefaultShape", "mblSwSquareShape", "mblSwRoundShape1",
-		//		"mblSwRoundShape2", "mblSwArcShape1" or "mblSwArcShape2".
-		//		The default value is "mblSwDefaultShape".
-		shape: "mblSwDefaultShape",
-
-		// tabIndex: String
-		//		Tabindex setting for this widget so users can hit the tab key to
-		//		focus on it.
-		tabIndex: "0",
-		_setTabIndexAttr: "", // sets tabIndex to domNode
-
-		/* internal properties */
-		baseClass: "mblSwitch",
-		// role: [private] String
-		//		The accessibility role.
-		role: "", // a11y
-
-		buildRendering: function(){
-			if(!this.templateString){ // true if this widget is not templated
-				this.domNode = (this.srcNodeRef && this.srcNodeRef.tagName === "SPAN") ?
-					this.srcNodeRef : domConstruct.create("span");
-			}
-			// prevent browser scrolling on IE10 (evt.preventDefault() is not enough)
-			if(typeof this.domNode.style.msTouchAction != "undefined"){
-				this.domNode.style.msTouchAction = "none";
-			}
-			this.inherited(arguments);
-			if(!this.templateString){ // true if this widget is not templated
-				var c = (this.srcNodeRef && this.srcNodeRef.className) || this.className || this["class"];
-				if((c = c.match(/mblSw.*Shape\d*/))){ this.shape = c; }
-				domClass.add(this.domNode, this.shape);
-				var nameAttr = this.name ? " name=\"" + this.name + "\"" : "";
-				this.domNode.innerHTML =
-					  '<div class="mblSwitchInner">'
-					+	'<div class="mblSwitchBg mblSwitchBgLeft">'
-					+		'<div class="mblSwitchText mblSwitchTextLeft"></div>'
-					+	'</div>'
-					+	'<div class="mblSwitchBg mblSwitchBgRight">'
-					+		'<div class="mblSwitchText mblSwitchTextRight"></div>'
-					+	'</div>'
-					+	'<div class="mblSwitchKnob"></div>'
-					+	'<input type="hidden"'+nameAttr+'></div>'
-					+ '</div>';
-				var n = this.inner = this.domNode.firstChild;
-				this.left = n.childNodes[0];
-				this.right = n.childNodes[1];
-				this.knob = n.childNodes[2];
-				this.input = n.childNodes[3];
-			}
-			domAttr.set(this.domNode, "role", "checkbox"); //a11y
-			domAttr.set(this.domNode, "aria-checked", (this.value === "on") ? "true" : "false"); //a11y
-
-			this.switchNode = this.domNode;
-
-			if(has("windows-theme")) {
-				var rootNode = domConstruct.create("div", {className: "mblSwitchContainer"});
-				this.labelNode = domConstruct.create("label", {"class": "mblSwitchLabel", "for": this.id}, rootNode);
-				rootNode.appendChild(this.domNode.cloneNode(true));
-				this.domNode = rootNode;
-				this.focusNode = rootNode.childNodes[1];
-				this.labelNode.innerHTML = (this.value=="off") ? this.rightLabel : this.leftLabel;
-				this.switchNode = this.domNode.childNodes[1];
-				var inner = this.inner = this.domNode.childNodes[1].firstChild;
-				this.left = inner.childNodes[0];
-				this.right = inner.childNodes[1];
-				this.knob = inner.childNodes[2];
-				this.input = inner.childNodes[3];
-			}
-		},
-
-		postCreate: function(){
-			this.connect(this.switchNode, "onclick", "_onClick");
-			this.connect(this.switchNode, "onkeydown", "_onClick"); // for desktop browsers
-			this._startHandle = this.connect(this.switchNode, touch.press, "onTouchStart");
-			this._initialValue = this.value; // for reset()
-		},
-
-		_changeState: function(/*String*/state, /*Boolean*/anim){
-			var on = (state === "on");
-			this.left.style.display = "";
-			this.right.style.display = "";
-			this.inner.style.left = "";
-			if(anim){
-				domClass.add(this.switchNode, "mblSwitchAnimation");
-			}
-			domClass.remove(this.switchNode, on ? "mblSwitchOff" : "mblSwitchOn");
-			domClass.add(this.switchNode, on ? "mblSwitchOn" : "mblSwitchOff");
-			domAttr.set(this.switchNode, "aria-checked", on ? "true" : "false"); //a11y
-
-			var _this = this;
-			_this.defer(function(){
-				_this.left.style.display = on ? "" : "none";
-				_this.right.style.display = !on ? "" : "none";
-				domClass.remove(_this.switchNode, "mblSwitchAnimation");
-			}, anim ? 300 : 0);
-		},
-
-		_createMaskImage: function(){
-			if(this._timer){
-				 this._timer.remove();
-				 delete this._timer;
-			}
-			if(this._hasMaskImage){ return; }
-			this._width = this.switchNode.offsetWidth - this.knob.offsetWidth;
-			this._hasMaskImage = true;
-			if(!(has("webkit")||has("svg"))){ return; }
-			var rDef = domStyle.get(this.left, "borderTopLeftRadius");
-			if(rDef == "0px"){ return; }
-			var rDefs = rDef.split(" ");
-			var rx = parseFloat(rDefs[0]), ry = (rDefs.length == 1) ? rx : parseFloat(rDefs[1]);
-			var w = this.switchNode.offsetWidth, h = this.switchNode.offsetHeight;
-			var id = (this.shape+"Mask"+w+h+rx+ry).replace(/\./,"_");
-			
-			maskUtils.createRoundMask(this.switchNode, 0, 0, 0, 0, w, h, rx, ry, 1);
-		},
-		
-		_onClick: function(e){
-			// summary:
-			//		Internal handler for click events.
-			// tags:
-			//		private
-			if(e && e.type === "keydown" && e.keyCode !== 13){ return; }
-			if(this.onClick(e) === false){ return; } // user's click action
-			if(this._moved){ return; }
-			this.value = this.input.value = (this.value == "on") ? "off" : "on";
-			this._changeState(this.value, true);
-			this.onStateChanged(this.value);
-		},
-
-		onClick: function(/*Event*/ /*===== e =====*/){
-			// summary:
-			//		User defined function to handle clicks
-			// tags:
-			//		callback
-		},
-
-		onTouchStart: function(/*Event*/e){
-			// summary:
-			//		Internal function to handle touchStart events.
-			this._moved = false;
-			this.innerStartX = this.inner.offsetLeft;
-			if(!this._conn){
-				this._conn = [
-					this.connect(this.inner, touch.move, "onTouchMove"),
-					this.connect(win.doc, touch.release, "onTouchEnd")
-				];
-
-				/* While moving the slider knob sometimes IE fires MSPointerCancel event. That prevents firing
-				MSPointerUP event (http://msdn.microsoft.com/ru-ru/library/ie/hh846776%28v=vs.85%29.aspx) so the
-				knob can be stuck in the middle of the switch. As a fix we handle MSPointerCancel event with the
-				same lintener as for MSPointerUp event.
-				*/
-				if(has("windows-theme")){
-					this._conn.push(this.connect(win.doc, "MSPointerCancel", "onTouchEnd"));
-				}
-			}
-			this.touchStartX = e.touches ? e.touches[0].pageX : e.clientX;
-			this.left.style.display = "";
-			this.right.style.display = "";
-			event.stop(e);
-			this._createMaskImage();
-		},
-
-		onTouchMove: function(/*Event*/e){
-			// summary:
-			//		Internal function to handle touchMove events.
-			e.preventDefault();
-			var dx;
-			if(e.targetTouches){
-				if(e.targetTouches.length != 1){ return; }
-				dx = e.targetTouches[0].clientX - this.touchStartX;
-			}else{
-				dx = e.clientX - this.touchStartX;
-			}
-			var pos = this.innerStartX + dx;
-			var d = 10;
-			if(pos <= -(this._width-d)){ pos = -this._width; }
-			if(pos >= -d){ pos = 0; }
-			this.inner.style.left = pos + "px";
-			if(Math.abs(dx) > d){
-				this._moved = true;
-			}
-		},
-
-		onTouchEnd: function(/*Event*/e){
-			// summary:
-			//		Internal function to handle touchEnd events.
-			array.forEach(this._conn, connect.disconnect);
-			this._conn = null;
-			if(this.innerStartX == this.inner.offsetLeft){
-				// need to send a synthetic click?
-				if(has("touch") && has("clicks-prevented")){
-					dm._sendClick(this.inner, e);
-				}
-				return;
-			}
-			var newState = (this.inner.offsetLeft < -(this._width/2)) ? "off" : "on";
-			newState = this._newState(newState);
-			this._changeState(newState, true);
-			if(newState != this.value){
-				this.value = this.input.value = newState;
-				this.onStateChanged(newState);
-			}
-		},
-		_newState: function(newState){
-			return newState;
-		},
-		onStateChanged: function(/*String*/newState){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called when the state has been changed.
-			if (this.labelNode) {
-				this.labelNode.innerHTML = newState=='off' ? this.rightLabel : this.leftLabel;
-			}
-		},
-
-		_setValueAttr: function(/*String*/value){
-			this._changeState(value, false);
-			if(this.value != value){
-				this.onStateChanged(value);
-			}
-			this.value = this.input.value = value;
-		},
-
-		_setLeftLabelAttr: function(/*String*/label){
-			this.leftLabel = label;
-			this.left.firstChild.innerHTML = this._cv ? this._cv(label) : label;
-		},
-
-		_setRightLabelAttr: function(/*String*/label){
-			this.rightLabel = label;
-			this.right.firstChild.innerHTML = this._cv ? this._cv(label) : label;
-		},
-
-		reset: function(){
-			// summary:
-			//		Reset the widget's value to what it was at initialization time
-			this.set("value", this._initialValue);
-		}
-	});
-
-	return has("dojo-bidi") ? declare("dojox.mobile.Switch", [Switch, BidiSwitch]) : Switch;		
-});
-
-},
-'dojox/mobile/_maskUtils':function(){
-define([
-	"dojo/_base/window",
-	"dojo/dom-style",
-	"./sniff"
-], function(win, domStyle, has){
-	
-	var cache = {};
-	
-	return {
-		// summary:
-		//		Utility methods to clip rounded corners of various elements (Switch, ScrollablePane, scrollbars in scrollable widgets).
-		//		Uses -webkit-mask-image on webkit, or SVG on other browsers.
-		
-		createRoundMask: function(/*DomNode*/node, x, y, r, b, w, h, rx, ry, e){
-			// summary:
-			//		Creates and sets a mask for the specified node.
-			
-			var tw = x + w + r;
-			var th = y + h + b;
-			
-			if(has("webkit")){			// use -webkit-mask-image
-				var id = ("DojoMobileMask" + x + y + w + h + rx + ry).replace(/\./g, "_");
-				if (!cache[id]) {
-					cache[id] = 1;
-					var ctx = win.doc.getCSSCanvasContext("2d", id, tw, th);
-					ctx.beginPath();
-					if (rx == ry) {
-						// round arc
-						if(rx == 2 && w == 5){
-							// optimized case for vertical scrollbar
-							ctx.fillStyle = "rgba(0,0,0,0.5)";
-							ctx.fillRect(1, 0, 3, 2);
-							ctx.fillRect(0, 1, 5, 1);
-							ctx.fillRect(0, h - 2, 5, 1);
-							ctx.fillRect(1, h - 1, 3, 2);
-							ctx.fillStyle = "rgb(0,0,0)";
-							ctx.fillRect(0, 2, 5, h - 4);
-						}else if(rx == 2 && h == 5){
-							// optimized case for horizontal scrollbar
-							ctx.fillStyle = "rgba(0,0,0,0.5)";
-							ctx.fillRect(0, 1, 2, 3);
-							ctx.fillRect(1, 0, 1, 5);
-							ctx.fillRect(w - 2, 0, 1, 5);
-							ctx.fillRect(w - 1, 1, 2, 3);
-							ctx.fillStyle = "rgb(0,0,0)";
-							ctx.fillRect(2, 0, w - 4, 5);
-						}else{
-							// general case
-							ctx.fillStyle = "#000000";
-							ctx.moveTo(x+rx, y);
-							ctx.arcTo(x, y, x, y+rx, rx);
-							ctx.lineTo(x, y+h - rx);
-							ctx.arcTo(x, y+h, x+rx, y+h, rx);
-							ctx.lineTo(x+w - rx, y+h);
-							ctx.arcTo(x+w, y+h, x+w, y+rx, rx);
-							ctx.lineTo(x+w, y+rx);
-							ctx.arcTo(x+w, y, x+w - rx, y, rx);
-						}
-					} else {
-						// elliptical arc
-						var pi = Math.PI;
-						ctx.scale(1, ry / rx);
-						ctx.moveTo(x+rx, y);
-						ctx.arc(x+rx, y+rx, rx, 1.5 * pi, 0.5 * pi, true);
-						ctx.lineTo(x+w - rx, y+2 * rx);
-						ctx.arc(x+w - rx, y+rx, rx, 0.5 * pi, 1.5 * pi, true);
-					}
-					ctx.closePath();
-					ctx.fill();
-				}
-				node.style.webkitMaskImage = "-webkit-canvas(" + id + ")";
-			}else if(has("svg")){		// add an SVG image to clip the corners.
-				if(node._svgMask){
-					node.removeChild(node._svgMask);
-				}
-				var bg = null;
-				for(var p = node.parentNode; p; p = p.parentNode){
-					bg = domStyle.getComputedStyle(p).backgroundColor;
-					if(bg && bg != "transparent" && !bg.match(/rgba\(.*,\s*0\s*\)/)){
-						break;
-					}
-				}
-				var svgNS = "http://www.w3.org/2000/svg";
-				var svg = win.doc.createElementNS(svgNS, "svg");
-				svg.setAttribute("width", tw);
-				svg.setAttribute("height", th);
-				svg.style.position = "absolute";
-				svg.style.pointerEvents = "none";
-				svg.style.opacity = "1";
-				svg.style.zIndex = "2147483647"; // max int
-				var path = win.doc.createElementNS(svgNS, "path");
-				e = e || 0;
-				rx += e;
-				ry += e;
-				// TODO: optimized cases for scrollbars as in webkit case?
-				var d = " M" + (x + rx - e) + "," + (y - e) + " a" + rx + "," + ry + " 0 0,0 " + (-rx) + "," + ry + " v" + (-ry) + " h" + rx + " Z" +
-						" M" + (x - e) + "," + (y + h - ry + e) + " a" + rx + "," + ry + " 0 0,0 " + rx + "," + ry + " h" + (-rx) + " v" + (-ry) + " z" +
-						" M" + (x + w - rx + e) + "," + (y + h + e) + " a" + rx + "," + ry + " 0 0,0 " + rx + "," + (-ry) + " v" + ry + " h" + (-rx) + " z" +
-						" M" + (x + w + e) + "," + (y + ry - e) + " a" + rx + "," + ry + " 0 0,0 " + (-rx) + "," + (-ry) + " h" + rx + " v" + ry + " z";
-				if(y > 0){
-					d += " M0,0 h" + tw + " v" + y + " h" + (-tw) + " z";
-				}
-				if(b > 0){
-					d += " M0," + (y + h) + " h" + tw + " v" + b + " h" + (-tw) + " z";
-				}
-				path.setAttribute("d", d);
-				path.setAttribute("fill", bg);
-				path.setAttribute("stroke", bg);
-				path.style.opacity = "1";
-				svg.appendChild(path); 
-				node._svgMask = svg;
-				node.appendChild(svg);
-			}
-		}
-	};
-});
-
-},
 'dojox/mobile/deviceTheme':function(){
 (typeof define === "undefined" ? function(deps, def) { def(); } : define)([
 	"dojo/_base/config",
@@ -9533,6 +4102,352 @@ define([
 	window.deviceTheme = dm.deviceTheme = deviceTheme;
 
 	return deviceTheme;
+});
+
+},
+'dojo/store/Memory':function(){
+define(["../_base/declare", "./util/QueryResults", "./util/SimpleQueryEngine" /*=====, "./api/Store" =====*/],
+function(declare, QueryResults, SimpleQueryEngine /*=====, Store =====*/){
+
+// module:
+//		dojo/store/Memory
+
+// No base class, but for purposes of documentation, the base class is dojo/store/api/Store
+var base = null;
+/*===== base = Store; =====*/
+
+return declare("dojo.store.Memory", base, {
+	// summary:
+	//		This is a basic in-memory object store. It implements dojo/store/api/Store.
+	constructor: function(options){
+		// summary:
+		//		Creates a memory object store.
+		// options: dojo/store/Memory
+		//		This provides any configuration information that will be mixed into the store.
+		//		This should generally include the data property to provide the starting set of data.
+		for(var i in options){
+			this[i] = options[i];
+		}
+		this.setData(this.data || []);
+	},
+	// data: Array
+	//		The array of all the objects in the memory store
+	data:null,
+
+	// idProperty: String
+	//		Indicates the property to use as the identity property. The values of this
+	//		property should be unique.
+	idProperty: "id",
+
+	// index: Object
+	//		An index of data indices into the data array by id
+	index:null,
+
+	// queryEngine: Function
+	//		Defines the query engine to use for querying the data store
+	queryEngine: SimpleQueryEngine,
+	get: function(id){
+		// summary:
+		//		Retrieves an object by its identity
+		// id: Number
+		//		The identity to use to lookup the object
+		// returns: Object
+		//		The object in the store that matches the given id.
+		return this.data[this.index[id]];
+	},
+	getIdentity: function(object){
+		// summary:
+		//		Returns an object's identity
+		// object: Object
+		//		The object to get the identity from
+		// returns: Number
+		return object[this.idProperty];
+	},
+	put: function(object, options){
+		// summary:
+		//		Stores an object
+		// object: Object
+		//		The object to store.
+		// options: dojo/store/api/Store.PutDirectives?
+		//		Additional metadata for storing the data.  Includes an "id"
+		//		property if a specific id is to be used.
+		// returns: Number
+		var data = this.data,
+			index = this.index,
+			idProperty = this.idProperty;
+		var id = object[idProperty] = (options && "id" in options) ? options.id : idProperty in object ? object[idProperty] : Math.random();
+		if(id in index){
+			// object exists
+			if(options && options.overwrite === false){
+				throw new Error("Object already exists");
+			}
+			// replace the entry in data
+			data[index[id]] = object;
+		}else{
+			// add the new object
+			index[id] = data.push(object) - 1;
+		}
+		return id;
+	},
+	add: function(object, options){
+		// summary:
+		//		Creates an object, throws an error if the object already exists
+		// object: Object
+		//		The object to store.
+		// options: dojo/store/api/Store.PutDirectives?
+		//		Additional metadata for storing the data.  Includes an "id"
+		//		property if a specific id is to be used.
+		// returns: Number
+		(options = options || {}).overwrite = false;
+		// call put with overwrite being false
+		return this.put(object, options);
+	},
+	remove: function(id){
+		// summary:
+		//		Deletes an object by its identity
+		// id: Number
+		//		The identity to use to delete the object
+		// returns: Boolean
+		//		Returns true if an object was removed, falsy (undefined) if no object matched the id
+		var index = this.index;
+		var data = this.data;
+		if(id in index){
+			data.splice(index[id], 1);
+			// now we have to reindex
+			this.setData(data);
+			return true;
+		}
+	},
+	query: function(query, options){
+		// summary:
+		//		Queries the store for objects.
+		// query: Object
+		//		The query to use for retrieving objects from the store.
+		// options: dojo/store/api/Store.QueryOptions?
+		//		The optional arguments to apply to the resultset.
+		// returns: dojo/store/api/Store.QueryResults
+		//		The results of the query, extended with iterative methods.
+		//
+		// example:
+		//		Given the following store:
+		//
+		// 	|	var store = new Memory({
+		// 	|		data: [
+		// 	|			{id: 1, name: "one", prime: false },
+		//	|			{id: 2, name: "two", even: true, prime: true},
+		//	|			{id: 3, name: "three", prime: true},
+		//	|			{id: 4, name: "four", even: true, prime: false},
+		//	|			{id: 5, name: "five", prime: true}
+		//	|		]
+		//	|	});
+		//
+		//	...find all items where "prime" is true:
+		//
+		//	|	var results = store.query({ prime: true });
+		//
+		//	...or find all items where "even" is true:
+		//
+		//	|	var results = store.query({ even: true });
+		return QueryResults(this.queryEngine(query, options)(this.data));
+	},
+	setData: function(data){
+		// summary:
+		//		Sets the given data as the source for this store, and indexes it
+		// data: Object[]
+		//		An array of objects to use as the source of data.
+		if(data.items){
+			// just for convenience with the data format IFRS expects
+			this.idProperty = data.identifier;
+			data = this.data = data.items;
+		}else{
+			this.data = data;
+		}
+		this.index = {};
+		for(var i = 0, l = data.length; i < l; i++){
+			this.index[data[i][this.idProperty]] = i;
+		}
+	}
+});
+
+});
+
+},
+'dojo/store/util/QueryResults':function(){
+define(["../../_base/array", "../../_base/lang", "../../when"
+], function(array, lang, when){
+
+// module:
+//		dojo/store/util/QueryResults
+
+var QueryResults = function(results){
+	// summary:
+	//		A function that wraps the results of a store query with additional
+	//		methods.
+	// description:
+	//		QueryResults is a basic wrapper that allows for array-like iteration
+	//		over any kind of returned data from a query.  While the simplest store
+	//		will return a plain array of data, other stores may return deferreds or
+	//		promises; this wrapper makes sure that *all* results can be treated
+	//		the same.
+	//
+	//		Additional methods include `forEach`, `filter` and `map`.
+	// results: Array|dojo/promise/Promise
+	//		The result set as an array, or a promise for an array.
+	// returns:
+	//		An array-like object that can be used for iterating over.
+	// example:
+	//		Query a store and iterate over the results.
+	//
+	//	|	store.query({ prime: true }).forEach(function(item){
+	//	|		//	do something
+	//	|	});
+
+	if(!results){
+		return results;
+	}
+	// if it is a promise it may be frozen
+	if(results.then){
+		results = lang.delegate(results);
+	}
+	function addIterativeMethod(method){
+		if(!results[method]){
+			results[method] = function(){
+				var args = arguments;
+				return when(results, function(results){
+					Array.prototype.unshift.call(args, results);
+					return QueryResults(array[method].apply(array, args));
+				});
+			};
+		}
+	}
+	addIterativeMethod("forEach");
+	addIterativeMethod("filter");
+	addIterativeMethod("map");
+	if(!results.total){
+		results.total = when(results, function(results){
+			return results.length;
+		});
+	}
+	return results; // Object
+};
+
+lang.setObject("dojo.store.util.QueryResults", QueryResults);
+
+return QueryResults;
+
+});
+
+},
+'dojo/store/util/SimpleQueryEngine':function(){
+define(["../../_base/array" /*=====, "../api/Store" =====*/], function(arrayUtil /*=====, Store =====*/){
+
+// module:
+//		dojo/store/util/SimpleQueryEngine
+
+return function(query, options){
+	// summary:
+	//		Simple query engine that matches using filter functions, named filter
+	//		functions or objects by name-value on a query object hash
+	//
+	// description:
+	//		The SimpleQueryEngine provides a way of getting a QueryResults through
+	//		the use of a simple object hash as a filter.  The hash will be used to
+	//		match properties on data objects with the corresponding value given. In
+	//		other words, only exact matches will be returned.
+	//
+	//		This function can be used as a template for more complex query engines;
+	//		for example, an engine can be created that accepts an object hash that
+	//		contains filtering functions, or a string that gets evaluated, etc.
+	//
+	//		When creating a new dojo.store, simply set the store's queryEngine
+	//		field as a reference to this function.
+	//
+	// query: Object
+	//		An object hash with fields that may match fields of items in the store.
+	//		Values in the hash will be compared by normal == operator, but regular expressions
+	//		or any object that provides a test() method are also supported and can be
+	//		used to match strings by more complex expressions
+	//		(and then the regex's or object's test() method will be used to match values).
+	//
+	// options: dojo/store/api/Store.QueryOptions?
+	//		An object that contains optional information such as sort, start, and count.
+	//
+	// returns: Function
+	//		A function that caches the passed query under the field "matches".  See any
+	//		of the "query" methods on dojo.stores.
+	//
+	// example:
+	//		Define a store with a reference to this engine, and set up a query method.
+	//
+	//	|	var myStore = function(options){
+	//	|		//	...more properties here
+	//	|		this.queryEngine = SimpleQueryEngine;
+	//	|		//	define our query method
+	//	|		this.query = function(query, options){
+	//	|			return QueryResults(this.queryEngine(query, options)(this.data));
+	//	|		};
+	//	|	};
+
+	// create our matching query function
+	switch(typeof query){
+		default:
+			throw new Error("Can not query with a " + typeof query);
+		case "object": case "undefined":
+			var queryObject = query;
+			query = function(object){
+				for(var key in queryObject){
+					var required = queryObject[key];
+					if(required && required.test){
+						// an object can provide a test method, which makes it work with regex
+						if(!required.test(object[key], object)){
+							return false;
+						}
+					}else if(required != object[key]){
+						return false;
+					}
+				}
+				return true;
+			};
+			break;
+		case "string":
+			// named query
+			if(!this[query]){
+				throw new Error("No filter function " + query + " was found in store");
+			}
+			query = this[query];
+			// fall through
+		case "function":
+			// fall through
+	}
+	function execute(array){
+		// execute the whole query, first we filter
+		var results = arrayUtil.filter(array, query);
+		// next we sort
+		var sortSet = options && options.sort;
+		if(sortSet){
+			results.sort(typeof sortSet == "function" ? sortSet : function(a, b){
+				for(var sort, i=0; sort = sortSet[i]; i++){
+					var aValue = a[sort.attribute];
+					var bValue = b[sort.attribute];
+					if (aValue != bValue){
+						return !!sort.descending == (aValue == null || aValue > bValue) ? -1 : 1;
+					}
+				}
+				return 0;
+			});
+		}
+		// now we paginate
+		if(options && (options.start || options.count)){
+			var total = results.length;
+			results = results.slice(options.start || 0, (options.start || 0) + (options.count || Infinity));
+			results.total = total;
+		}
+		return results;
+	}
+	execute.matches = query;
+	return execute;
+};
+
 });
 
 },
@@ -11378,6 +6293,67 @@ define(["require", "dojo/when", "dojo/on", "dojo/_base/declare", "dojo/_base/lan
 });
 
 },
+'dijit/Destroyable':function(){
+define([
+	"dojo/_base/array", // array.forEach array.map
+	"dojo/aspect",
+	"dojo/_base/declare"
+], function(array, aspect, declare){
+
+	// module:
+	//		dijit/Destroyable
+
+	return declare("dijit.Destroyable", null, {
+		// summary:
+		//		Mixin to track handles and release them when instance is destroyed.
+		// description:
+		//		Call this.own(...) on list of handles (returned from dojo/aspect, dojo/on,
+		//		dojo/Stateful::watch, or any class (including widgets) with a destroyRecursive() or destroy() method.
+		//		Then call destroy() later to destroy this instance and release the resources.
+
+		destroy: function(/*Boolean*/ preserveDom){
+			// summary:
+			//		Destroy this class, releasing any resources registered via own().
+			this._destroyed = true;
+		},
+
+		own: function(){
+			// summary:
+			//		Track specified handles and remove/destroy them when this instance is destroyed, unless they were
+			//		already removed/destroyed manually.
+			// tags:
+			//		protected
+			// returns:
+			//		The array of specified handles, so you can do for example:
+			//	|		var handle = this.own(on(...))[0];
+
+			array.forEach(arguments, function(handle){
+				var destroyMethodName =
+					"destroyRecursive" in handle ? "destroyRecursive" : // remove "destroyRecursive" for 2.0
+						"destroy" in handle ? "destroy" :
+							"remove";
+
+				// When this.destroy() is called, destroy handle.  Since I'm using aspect.before(),
+				// the handle will be destroyed before a subclass's destroy() method starts running, before it calls
+				// this.inherited() or even if it doesn't call this.inherited() at all.  If that's an issue, make an
+				// onDestroy() method and connect to that instead.
+				var odh = aspect.before(this, "destroy", function(preserveDom){
+					handle[destroyMethodName](preserveDom);
+				});
+
+				// If handle is destroyed manually before this.destroy() is called, remove the listener set directly above.
+				var hdh = aspect.after(handle, destroyMethodName, function(){
+					odh.remove();
+					hdh.remove();
+				}, true);
+			}, this);
+
+			return arguments;		// handle
+		}
+	});
+});
+
+},
 'dijit/_TemplatedMixin':function(){
 define([
 	"dojo/cache",	// dojo.cache
@@ -11983,6 +6959,1409 @@ define([
 	});
 	
 	return _AttachMixin;
+});
+
+},
+'dijit/_WidgetBase':function(){
+define([
+	"require", // require.toUrl
+	"dojo/_base/array", // array.forEach array.map
+	"dojo/aspect",
+	"dojo/_base/config", // config.blankGif
+	"dojo/_base/connect", // connect.connect
+	"dojo/_base/declare", // declare
+	"dojo/dom", // dom.byId
+	"dojo/dom-attr", // domAttr.set domAttr.remove
+	"dojo/dom-class", // domClass.add domClass.replace
+	"dojo/dom-construct", // domConstruct.destroy domConstruct.place
+	"dojo/dom-geometry", // isBodyLtr
+	"dojo/dom-style", // domStyle.set, domStyle.get
+	"dojo/has",
+	"dojo/_base/kernel",
+	"dojo/_base/lang", // mixin(), isArray(), etc.
+	"dojo/on",
+	"dojo/ready",
+	"dojo/Stateful", // Stateful
+	"dojo/topic",
+	"dojo/_base/window", // win.body()
+	"./Destroyable",
+	"dojo/has!dojo-bidi?./_BidiMixin",
+	"./registry"    // registry.getUniqueId(), registry.findWidgets()
+], function(require, array, aspect, config, connect, declare,
+			dom, domAttr, domClass, domConstruct, domGeometry, domStyle, has, kernel,
+			lang, on, ready, Stateful, topic, win, Destroyable, _BidiMixin, registry){
+
+	// module:
+	//		dijit/_WidgetBase
+
+	// Flag to make dijit load modules the app didn't explicitly request, for backwards compatibility
+	has.add("dijit-legacy-requires", !kernel.isAsync);
+
+	// Flag to enable support for textdir attribute
+	has.add("dojo-bidi", false);
+
+
+	// For back-compat, remove in 2.0.
+	if(has("dijit-legacy-requires")){
+		ready(0, function(){
+			var requires = ["dijit/_base/manager"];
+			require(requires);	// use indirection so modules not rolled into a build
+		});
+	}
+
+	// Nested hash listing attributes for each tag, all strings in lowercase.
+	// ex: {"div": {"style": true, "tabindex" true}, "form": { ...
+	var tagAttrs = {};
+
+	function getAttrs(obj){
+		var ret = {};
+		for(var attr in obj){
+			ret[attr.toLowerCase()] = true;
+		}
+		return ret;
+	}
+
+	function nonEmptyAttrToDom(attr){
+		// summary:
+		//		Returns a setter function that copies the attribute to this.domNode,
+		//		or removes the attribute from this.domNode, depending on whether the
+		//		value is defined or not.
+		return function(val){
+			domAttr[val ? "set" : "remove"](this.domNode, attr, val);
+			this._set(attr, val);
+		};
+	}
+
+	var _WidgetBase = declare("dijit._WidgetBase", [Stateful, Destroyable], {
+		// summary:
+		//		Future base class for all Dijit widgets.
+		// description:
+		//		Future base class for all Dijit widgets.
+		//		_Widget extends this class adding support for various features needed by desktop.
+		//
+		//		Provides stubs for widget lifecycle methods for subclasses to extend, like postMixInProperties(), buildRendering(),
+		//		postCreate(), startup(), and destroy(), and also public API methods like set(), get(), and watch().
+		//
+		//		Widgets can provide custom setters/getters for widget attributes, which are called automatically by set(name, value).
+		//		For an attribute XXX, define methods _setXXXAttr() and/or _getXXXAttr().
+		//
+		//		_setXXXAttr can also be a string/hash/array mapping from a widget attribute XXX to the widget's DOMNodes:
+		//
+		//		- DOM node attribute
+		// |		_setFocusAttr: {node: "focusNode", type: "attribute"}
+		// |		_setFocusAttr: "focusNode"	(shorthand)
+		// |		_setFocusAttr: ""		(shorthand, maps to this.domNode)
+		//		Maps this.focus to this.focusNode.focus, or (last example) this.domNode.focus
+		//
+		//		- DOM node innerHTML
+		//	|		_setTitleAttr: { node: "titleNode", type: "innerHTML" }
+		//		Maps this.title to this.titleNode.innerHTML
+		//
+		//		- DOM node innerText
+		//	|		_setTitleAttr: { node: "titleNode", type: "innerText" }
+		//		Maps this.title to this.titleNode.innerText
+		//
+		//		- DOM node CSS class
+		// |		_setMyClassAttr: { node: "domNode", type: "class" }
+		//		Maps this.myClass to this.domNode.className
+		//
+		//		If the value of _setXXXAttr is an array, then each element in the array matches one of the
+		//		formats of the above list.
+		//
+		//		If the custom setter is null, no action is performed other than saving the new value
+		//		in the widget (in this).
+		//
+		//		If no custom setter is defined for an attribute, then it will be copied
+		//		to this.focusNode (if the widget defines a focusNode), or this.domNode otherwise.
+		//		That's only done though for attributes that match DOMNode attributes (title,
+		//		alt, aria-labelledby, etc.)
+
+		// id: [const] String
+		//		A unique, opaque ID string that can be assigned by users or by the
+		//		system. If the developer passes an ID which is known not to be
+		//		unique, the specified ID is ignored and the system-generated ID is
+		//		used instead.
+		id: "",
+		_setIdAttr: "domNode", // to copy to this.domNode even for auto-generated id's
+
+		// lang: [const] String
+		//		Rarely used.  Overrides the default Dojo locale used to render this widget,
+		//		as defined by the [HTML LANG](http://www.w3.org/TR/html401/struct/dirlang.html#adef-lang) attribute.
+		//		Value must be among the list of locales specified during by the Dojo bootstrap,
+		//		formatted according to [RFC 3066](http://www.ietf.org/rfc/rfc3066.txt) (like en-us).
+		lang: "",
+		// set on domNode even when there's a focus node.	but don't set lang="", since that's invalid.
+		_setLangAttr: nonEmptyAttrToDom("lang"),
+
+		// dir: [const] String
+		//		Bi-directional support, as defined by the [HTML DIR](http://www.w3.org/TR/html401/struct/dirlang.html#adef-dir)
+		//		attribute. Either left-to-right "ltr" or right-to-left "rtl".  If undefined, widgets renders in page's
+		//		default direction.
+		dir: "",
+		// set on domNode even when there's a focus node.	but don't set dir="", since that's invalid.
+		_setDirAttr: nonEmptyAttrToDom("dir"), // to set on domNode even when there's a focus node
+
+		// class: String
+		//		HTML class attribute
+		"class": "",
+		_setClassAttr: { node: "domNode", type: "class" },
+
+		// style: String||Object
+		//		HTML style attributes as cssText string or name/value hash
+		style: "",
+
+		// title: String
+		//		HTML title attribute.
+		//
+		//		For form widgets this specifies a tooltip to display when hovering over
+		//		the widget (just like the native HTML title attribute).
+		//
+		//		For TitlePane or for when this widget is a child of a TabContainer, AccordionContainer,
+		//		etc., it's used to specify the tab label, accordion pane title, etc.  In this case it's
+		//		interpreted as HTML.
+		title: "",
+
+		// tooltip: String
+		//		When this widget's title attribute is used to for a tab label, accordion pane title, etc.,
+		//		this specifies the tooltip to appear when the mouse is hovered over that text.
+		tooltip: "",
+
+		// baseClass: [protected] String
+		//		Root CSS class of the widget (ex: dijitTextBox), used to construct CSS classes to indicate
+		//		widget state.
+		baseClass: "",
+
+		// srcNodeRef: [readonly] DomNode
+		//		pointer to original DOM node
+		srcNodeRef: null,
+
+		// domNode: [readonly] DomNode
+		//		This is our visible representation of the widget! Other DOM
+		//		Nodes may by assigned to other properties, usually through the
+		//		template system's data-dojo-attach-point syntax, but the domNode
+		//		property is the canonical "top level" node in widget UI.
+		domNode: null,
+
+		// containerNode: [readonly] DomNode
+		//		Designates where children of the source DOM node will be placed.
+		//		"Children" in this case refers to both DOM nodes and widgets.
+		//		For example, for myWidget:
+		//
+		//		|	<div data-dojo-type=myWidget>
+		//		|		<b> here's a plain DOM node
+		//		|		<span data-dojo-type=subWidget>and a widget</span>
+		//		|		<i> and another plain DOM node </i>
+		//		|	</div>
+		//
+		//		containerNode would point to:
+		//
+		//		|		<b> here's a plain DOM node
+		//		|		<span data-dojo-type=subWidget>and a widget</span>
+		//		|		<i> and another plain DOM node </i>
+		//
+		//		In templated widgets, "containerNode" is set via a
+		//		data-dojo-attach-point assignment.
+		//
+		//		containerNode must be defined for any widget that accepts innerHTML
+		//		(like ContentPane or BorderContainer or even Button), and conversely
+		//		is null for widgets that don't, like TextBox.
+		containerNode: null,
+
+		// ownerDocument: [const] Document?
+		//		The document this widget belongs to.  If not specified to constructor, will default to
+		//		srcNodeRef.ownerDocument, or if no sourceRef specified, then to the document global
+		ownerDocument: null,
+		_setOwnerDocumentAttr: function(val){
+			// this setter is merely to avoid automatically trying to set this.domNode.ownerDocument
+			this._set("ownerDocument", val);
+		},
+
+		/*=====
+		// _started: [readonly] Boolean
+		//		startup() has completed.
+		_started: false,
+		=====*/
+
+		// attributeMap: [protected] Object
+		//		Deprecated.	Instead of attributeMap, widget should have a _setXXXAttr attribute
+		//		for each XXX attribute to be mapped to the DOM.
+		//
+		//		attributeMap sets up a "binding" between attributes (aka properties)
+		//		of the widget and the widget's DOM.
+		//		Changes to widget attributes listed in attributeMap will be
+		//		reflected into the DOM.
+		//
+		//		For example, calling set('title', 'hello')
+		//		on a TitlePane will automatically cause the TitlePane's DOM to update
+		//		with the new title.
+		//
+		//		attributeMap is a hash where the key is an attribute of the widget,
+		//		and the value reflects a binding to a:
+		//
+		//		- DOM node attribute
+		// |		focus: {node: "focusNode", type: "attribute"}
+		//		Maps this.focus to this.focusNode.focus
+		//
+		//		- DOM node innerHTML
+		//	|		title: { node: "titleNode", type: "innerHTML" }
+		//		Maps this.title to this.titleNode.innerHTML
+		//
+		//		- DOM node innerText
+		//	|		title: { node: "titleNode", type: "innerText" }
+		//		Maps this.title to this.titleNode.innerText
+		//
+		//		- DOM node CSS class
+		// |		myClass: { node: "domNode", type: "class" }
+		//		Maps this.myClass to this.domNode.className
+		//
+		//		If the value is an array, then each element in the array matches one of the
+		//		formats of the above list.
+		//
+		//		There are also some shorthands for backwards compatibility:
+		//
+		//		- string --> { node: string, type: "attribute" }, for example:
+		//
+		//	|	"focusNode" ---> { node: "focusNode", type: "attribute" }
+		//
+		//		- "" --> { node: "domNode", type: "attribute" }
+		attributeMap: {},
+
+		// _blankGif: [protected] String
+		//		Path to a blank 1x1 image.
+		//		Used by `<img>` nodes in templates that really get their image via CSS background-image.
+		_blankGif: config.blankGif || require.toUrl("dojo/resources/blank.gif"),
+
+		//////////// INITIALIZATION METHODS ///////////////////////////////////////
+
+		/*=====
+		constructor: function(params, srcNodeRef){
+			// summary:
+			//		Create the widget.
+			// params: Object|null
+			//		Hash of initialization parameters for widget, including scalar values (like title, duration etc.)
+			//		and functions, typically callbacks like onClick.
+			//		The hash can contain any of the widget's properties, excluding read-only properties.
+			// srcNodeRef: DOMNode|String?
+			//		If a srcNodeRef (DOM node) is specified:
+			//
+			//		- use srcNodeRef.innerHTML as my contents
+			//		- if this is a behavioral widget then apply behavior to that srcNodeRef
+			//		- otherwise, replace srcNodeRef with my generated DOM tree
+		},
+		=====*/
+
+		_introspect: function(){
+			// summary:
+			//		Collect metadata about this widget (only once per class, not once per instance):
+			//
+			//			- list of attributes with custom setters, storing in this.constructor._setterAttrs
+			//			- generate this.constructor._onMap, mapping names like "mousedown" to functions like onMouseDown
+
+			var ctor = this.constructor;
+			if(!ctor._setterAttrs){
+				var proto = ctor.prototype,
+					attrs = ctor._setterAttrs = [], // attributes with custom setters
+					onMap = (ctor._onMap = {});
+
+				// Items in this.attributeMap are like custom setters.  For back-compat, remove for 2.0.
+				for(var name in proto.attributeMap){
+					attrs.push(name);
+				}
+
+				// Loop over widget properties, collecting properties with custom setters and filling in ctor._onMap.
+				for(name in proto){
+					if(/^on/.test(name)){
+						onMap[name.substring(2).toLowerCase()] = name;
+					}
+
+					if(/^_set[A-Z](.*)Attr$/.test(name)){
+						name = name.charAt(4).toLowerCase() + name.substr(5, name.length - 9);
+						if(!proto.attributeMap || !(name in proto.attributeMap)){
+							attrs.push(name);
+						}
+					}
+				}
+
+				// Note: this isn't picking up info on properties like aria-label and role, that don't have custom setters
+				// but that set() maps to attributes on this.domNode or this.focusNode
+			}
+		},
+
+		postscript: function(/*Object?*/params, /*DomNode|String*/srcNodeRef){
+			// summary:
+			//		Kicks off widget instantiation.  See create() for details.
+			// tags:
+			//		private
+
+			// Note that we skip calling this.inherited(), i.e. dojo/Stateful::postscript(), because 1.x widgets don't
+			// expect their custom setters to get called until after buildRendering().  Consider changing for 2.0.
+
+			this.create(params, srcNodeRef);
+		},
+
+		create: function(params, srcNodeRef){
+			// summary:
+			//		Kick off the life-cycle of a widget
+			// description:
+			//		Create calls a number of widget methods (postMixInProperties, buildRendering, postCreate,
+			//		etc.), some of which of you'll want to override. See http://dojotoolkit.org/reference-guide/dijit/_WidgetBase.html
+			//		for a discussion of the widget creation lifecycle.
+			//
+			//		Of course, adventurous developers could override create entirely, but this should
+			//		only be done as a last resort.
+			// params: Object|null
+			//		Hash of initialization parameters for widget, including scalar values (like title, duration etc.)
+			//		and functions, typically callbacks like onClick.
+			//		The hash can contain any of the widget's properties, excluding read-only properties.
+			// srcNodeRef: DOMNode|String?
+			//		If a srcNodeRef (DOM node) is specified:
+			//
+			//		- use srcNodeRef.innerHTML as my contents
+			//		- if this is a behavioral widget then apply behavior to that srcNodeRef
+			//		- otherwise, replace srcNodeRef with my generated DOM tree
+			// tags:
+			//		private
+
+			// First time widget is instantiated, scan prototype to figure out info about custom setters etc.
+			this._introspect();
+
+			// store pointer to original DOM tree
+			this.srcNodeRef = dom.byId(srcNodeRef);
+
+			// No longer used, remove for 2.0.
+			this._connects = [];
+			this._supportingWidgets = [];
+
+			// this is here for back-compat, remove in 2.0 (but check NodeList-instantiate.html test)
+			if(this.srcNodeRef && (typeof this.srcNodeRef.id == "string")){
+				this.id = this.srcNodeRef.id;
+			}
+
+			// mix in our passed parameters
+			if(params){
+				this.params = params;
+				lang.mixin(this, params);
+			}
+			this.postMixInProperties();
+
+			// Generate an id for the widget if one wasn't specified, or it was specified as id: undefined.
+			// Do this before buildRendering() because it might expect the id to be there.
+			if(!this.id){
+				this.id = registry.getUniqueId(this.declaredClass.replace(/\./g, "_"));
+				if(this.params){
+					// if params contains {id: undefined}, prevent _applyAttributes() from processing it
+					delete this.params.id;
+				}
+			}
+
+			// The document and <body> node this widget is associated with
+			this.ownerDocument = this.ownerDocument || (this.srcNodeRef ? this.srcNodeRef.ownerDocument : document);
+			this.ownerDocumentBody = win.body(this.ownerDocument);
+
+			registry.add(this);
+
+			this.buildRendering();
+
+			var deleteSrcNodeRef;
+
+			if(this.domNode){
+				// Copy attributes listed in attributeMap into the [newly created] DOM for the widget.
+				// Also calls custom setters for all attributes with custom setters.
+				this._applyAttributes();
+
+				// If srcNodeRef was specified, then swap out original srcNode for this widget's DOM tree.
+				// For 2.0, move this after postCreate().  postCreate() shouldn't depend on the
+				// widget being attached to the DOM since it isn't when a widget is created programmatically like
+				// new MyWidget({}).	See #11635.
+				var source = this.srcNodeRef;
+				if(source && source.parentNode && this.domNode !== source){
+					source.parentNode.replaceChild(this.domNode, source);
+					deleteSrcNodeRef = true;
+				}
+
+				// Note: for 2.0 may want to rename widgetId to dojo._scopeName + "_widgetId",
+				// assuming that dojo._scopeName even exists in 2.0
+				this.domNode.setAttribute("widgetId", this.id);
+			}
+			this.postCreate();
+
+			// If srcNodeRef has been processed and removed from the DOM (e.g. TemplatedWidget) then delete it to allow GC.
+			// I think for back-compatibility it isn't deleting srcNodeRef until after postCreate() has run.
+			if(deleteSrcNodeRef){
+				delete this.srcNodeRef;
+			}
+
+			this._created = true;
+		},
+
+		_applyAttributes: function(){
+			// summary:
+			//		Step during widget creation to copy  widget attributes to the
+			//		DOM according to attributeMap and _setXXXAttr objects, and also to call
+			//		custom _setXXXAttr() methods.
+			//
+			//		Skips over blank/false attribute values, unless they were explicitly specified
+			//		as parameters to the widget, since those are the default anyway,
+			//		and setting tabIndex="" is different than not setting tabIndex at all.
+			//
+			//		For backwards-compatibility reasons attributeMap overrides _setXXXAttr when
+			//		_setXXXAttr is a hash/string/array, but _setXXXAttr as a functions override attributeMap.
+			// tags:
+			//		private
+
+			// Call this.set() for each property that was either specified as parameter to constructor,
+			// or is in the list found above.	For correlated properties like value and displayedValue, the one
+			// specified as a parameter should take precedence.
+			// Particularly important for new DateTextBox({displayedValue: ...}) since DateTextBox's default value is
+			// NaN and thus is not ignored like a default value of "".
+
+			// Step 1: Save the current values of the widget properties that were specified as parameters to the constructor.
+			// Generally this.foo == this.params.foo, except if postMixInProperties() changed the value of this.foo.
+			var params = {};
+			for(var key in this.params || {}){
+				params[key] = this._get(key);
+			}
+
+			// Step 2: Call set() for each property with a non-falsy value that wasn't passed as a parameter to the constructor
+			array.forEach(this.constructor._setterAttrs, function(key){
+				if(!(key in params)){
+					var val = this._get(key);
+					if(val){
+						this.set(key, val);
+					}
+				}
+			}, this);
+
+			// Step 3: Call set() for each property that was specified as parameter to constructor.
+			// Use params hash created above to ignore side effects from step #2 above.
+			for(key in params){
+				this.set(key, params[key]);
+			}
+		},
+
+		postMixInProperties: function(){
+			// summary:
+			//		Called after the parameters to the widget have been read-in,
+			//		but before the widget template is instantiated. Especially
+			//		useful to set properties that are referenced in the widget
+			//		template.
+			// tags:
+			//		protected
+		},
+
+		buildRendering: function(){
+			// summary:
+			//		Construct the UI for this widget, setting this.domNode.
+			//		Most widgets will mixin `dijit._TemplatedMixin`, which implements this method.
+			// tags:
+			//		protected
+
+			if(!this.domNode){
+				// Create root node if it wasn't created by _TemplatedMixin
+				this.domNode = this.srcNodeRef || this.ownerDocument.createElement("div");
+			}
+
+			// baseClass is a single class name or occasionally a space-separated list of names.
+			// Add those classes to the DOMNode.  If RTL mode then also add with Rtl suffix.
+			// TODO: make baseClass custom setter
+			if(this.baseClass){
+				var classes = this.baseClass.split(" ");
+				if(!this.isLeftToRight()){
+					classes = classes.concat(array.map(classes, function(name){
+						return name + "Rtl";
+					}));
+				}
+				domClass.add(this.domNode, classes);
+			}
+		},
+
+		postCreate: function(){
+			// summary:
+			//		Processing after the DOM fragment is created
+			// description:
+			//		Called after the DOM fragment has been created, but not necessarily
+			//		added to the document.  Do not include any operations which rely on
+			//		node dimensions or placement.
+			// tags:
+			//		protected
+		},
+
+		startup: function(){
+			// summary:
+			//		Processing after the DOM fragment is added to the document
+			// description:
+			//		Called after a widget and its children have been created and added to the page,
+			//		and all related widgets have finished their create() cycle, up through postCreate().
+			//
+			//		Note that startup() may be called while the widget is still hidden, for example if the widget is
+			//		inside a hidden dijit/Dialog or an unselected tab of a dijit/layout/TabContainer.
+			//		For widgets that need to do layout, it's best to put that layout code inside resize(), and then
+			//		extend dijit/layout/_LayoutWidget so that resize() is called when the widget is visible.
+			if(this._started){
+				return;
+			}
+			this._started = true;
+			array.forEach(this.getChildren(), function(obj){
+				if(!obj._started && !obj._destroyed && lang.isFunction(obj.startup)){
+					obj.startup();
+					obj._started = true;
+				}
+			});
+		},
+
+		//////////// DESTROY FUNCTIONS ////////////////////////////////
+
+		destroyRecursive: function(/*Boolean?*/ preserveDom){
+			// summary:
+			//		Destroy this widget and its descendants
+			// description:
+			//		This is the generic "destructor" function that all widget users
+			//		should call to cleanly discard with a widget. Once a widget is
+			//		destroyed, it is removed from the manager object.
+			// preserveDom:
+			//		If true, this method will leave the original DOM structure
+			//		alone of descendant Widgets. Note: This will NOT work with
+			//		dijit._TemplatedMixin widgets.
+
+			this._beingDestroyed = true;
+			this.destroyDescendants(preserveDom);
+			this.destroy(preserveDom);
+		},
+
+		destroy: function(/*Boolean*/ preserveDom){
+			// summary:
+			//		Destroy this widget, but not its descendants.  Descendants means widgets inside of
+			//		this.containerNode.   Will also destroy any resources (including widgets) registered via this.own().
+			//
+			//		This method will also destroy internal widgets such as those created from a template,
+			//		assuming those widgets exist inside of this.domNode but outside of this.containerNode.
+			//
+			//		For 2.0 it's planned that this method will also destroy descendant widgets, so apps should not
+			//		depend on the current ability to destroy a widget without destroying its descendants.   Generally
+			//		they should use destroyRecursive() for widgets with children.
+			// preserveDom: Boolean
+			//		If true, this method will leave the original DOM structure alone.
+			//		Note: This will not yet work with _TemplatedMixin widgets
+
+			this._beingDestroyed = true;
+			this.uninitialize();
+
+			function destroy(w){
+				if(w.destroyRecursive){
+					w.destroyRecursive(preserveDom);
+				}else if(w.destroy){
+					w.destroy(preserveDom);
+				}
+			}
+
+			// Back-compat, remove for 2.0
+			array.forEach(this._connects, lang.hitch(this, "disconnect"));
+			array.forEach(this._supportingWidgets, destroy);
+
+			// Destroy supporting widgets, but not child widgets under this.containerNode (for 2.0, destroy child widgets
+			// here too).   if() statement is to guard against exception if destroy() called multiple times (see #15815).
+			if(this.domNode){
+				array.forEach(registry.findWidgets(this.domNode, this.containerNode), destroy);
+			}
+
+			this.destroyRendering(preserveDom);
+			registry.remove(this.id);
+			this._destroyed = true;
+		},
+
+		destroyRendering: function(/*Boolean?*/ preserveDom){
+			// summary:
+			//		Destroys the DOM nodes associated with this widget.
+			// preserveDom:
+			//		If true, this method will leave the original DOM structure alone
+			//		during tear-down. Note: this will not work with _Templated
+			//		widgets yet.
+			// tags:
+			//		protected
+
+			if(this.bgIframe){
+				this.bgIframe.destroy(preserveDom);
+				delete this.bgIframe;
+			}
+
+			if(this.domNode){
+				if(preserveDom){
+					domAttr.remove(this.domNode, "widgetId");
+				}else{
+					domConstruct.destroy(this.domNode);
+				}
+				delete this.domNode;
+			}
+
+			if(this.srcNodeRef){
+				if(!preserveDom){
+					domConstruct.destroy(this.srcNodeRef);
+				}
+				delete this.srcNodeRef;
+			}
+		},
+
+		destroyDescendants: function(/*Boolean?*/ preserveDom){
+			// summary:
+			//		Recursively destroy the children of this widget and their
+			//		descendants.
+			// preserveDom:
+			//		If true, the preserveDom attribute is passed to all descendant
+			//		widget's .destroy() method. Not for use with _Templated
+			//		widgets.
+
+			// get all direct descendants and destroy them recursively
+			array.forEach(this.getChildren(), function(widget){
+				if(widget.destroyRecursive){
+					widget.destroyRecursive(preserveDom);
+				}
+			});
+		},
+
+		uninitialize: function(){
+			// summary:
+			//		Deprecated. Override destroy() instead to implement custom widget tear-down
+			//		behavior.
+			// tags:
+			//		protected
+			return false;
+		},
+
+		////////////////// GET/SET, CUSTOM SETTERS, ETC. ///////////////////
+
+		_setStyleAttr: function(/*String||Object*/ value){
+			// summary:
+			//		Sets the style attribute of the widget according to value,
+			//		which is either a hash like {height: "5px", width: "3px"}
+			//		or a plain string
+			// description:
+			//		Determines which node to set the style on based on style setting
+			//		in attributeMap.
+			// tags:
+			//		protected
+
+			var mapNode = this.domNode;
+
+			// Note: technically we should revert any style setting made in a previous call
+			// to his method, but that's difficult to keep track of.
+
+			if(lang.isObject(value)){
+				domStyle.set(mapNode, value);
+			}else{
+				if(mapNode.style.cssText){
+					mapNode.style.cssText += "; " + value;
+				}else{
+					mapNode.style.cssText = value;
+				}
+			}
+
+			this._set("style", value);
+		},
+
+		_attrToDom: function(/*String*/ attr, /*String*/ value, /*Object?*/ commands){
+			// summary:
+			//		Reflect a widget attribute (title, tabIndex, duration etc.) to
+			//		the widget DOM, as specified by commands parameter.
+			//		If commands isn't specified then it's looked up from attributeMap.
+			//		Note some attributes like "type"
+			//		cannot be processed this way as they are not mutable.
+			// attr:
+			//		Name of member variable (ex: "focusNode" maps to this.focusNode) pointing
+			//		to DOMNode inside the widget, or alternately pointing to a subwidget
+			// tags:
+			//		private
+
+			commands = arguments.length >= 3 ? commands : this.attributeMap[attr];
+
+			array.forEach(lang.isArray(commands) ? commands : [commands], function(command){
+
+				// Get target node and what we are doing to that node
+				var mapNode = this[command.node || command || "domNode"];	// DOM node
+				var type = command.type || "attribute";	// class, innerHTML, innerText, or attribute
+
+				switch(type){
+					case "attribute":
+						if(lang.isFunction(value)){ // functions execute in the context of the widget
+							value = lang.hitch(this, value);
+						}
+
+						// Get the name of the DOM node attribute; usually it's the same
+						// as the name of the attribute in the widget (attr), but can be overridden.
+						// Also maps handler names to lowercase, like onSubmit --> onsubmit
+						var attrName = command.attribute ? command.attribute :
+							(/^on[A-Z][a-zA-Z]*$/.test(attr) ? attr.toLowerCase() : attr);
+
+						if(mapNode.tagName){
+							// Normal case, mapping to a DOMNode.  Note that modern browsers will have a mapNode.set()
+							// method, but for consistency we still call domAttr
+							domAttr.set(mapNode, attrName, value);
+						}else{
+							// mapping to a sub-widget
+							mapNode.set(attrName, value);
+						}
+						break;
+					case "innerText":
+						mapNode.innerHTML = "";
+						mapNode.appendChild(this.ownerDocument.createTextNode(value));
+						break;
+					case "innerHTML":
+						mapNode.innerHTML = value;
+						break;
+					case "class":
+						domClass.replace(mapNode, value, this[attr]);
+						break;
+				}
+			}, this);
+		},
+
+		get: function(name){
+			// summary:
+			//		Get a property from a widget.
+			// name:
+			//		The property to get.
+			// description:
+			//		Get a named property from a widget. The property may
+			//		potentially be retrieved via a getter method. If no getter is defined, this
+			//		just retrieves the object's property.
+			//
+			//		For example, if the widget has properties `foo` and `bar`
+			//		and a method named `_getFooAttr()`, calling:
+			//		`myWidget.get("foo")` would be equivalent to calling
+			//		`widget._getFooAttr()` and `myWidget.get("bar")`
+			//		would be equivalent to the expression
+			//		`widget.bar2`
+			var names = this._getAttrNames(name);
+			return this[names.g] ? this[names.g]() : this._get(name);
+		},
+
+		set: function(name, value){
+			// summary:
+			//		Set a property on a widget
+			// name:
+			//		The property to set.
+			// value:
+			//		The value to set in the property.
+			// description:
+			//		Sets named properties on a widget which may potentially be handled by a
+			//		setter in the widget.
+			//
+			//		For example, if the widget has properties `foo` and `bar`
+			//		and a method named `_setFooAttr()`, calling
+			//		`myWidget.set("foo", "Howdy!")` would be equivalent to calling
+			//		`widget._setFooAttr("Howdy!")` and `myWidget.set("bar", 3)`
+			//		would be equivalent to the statement `widget.bar = 3;`
+			//
+			//		set() may also be called with a hash of name/value pairs, ex:
+			//
+			//	|	myWidget.set({
+			//	|		foo: "Howdy",
+			//	|		bar: 3
+			//	|	});
+			//
+			//	This is equivalent to calling `set(foo, "Howdy")` and `set(bar, 3)`
+
+			if(typeof name === "object"){
+				for(var x in name){
+					this.set(x, name[x]);
+				}
+				return this;
+			}
+			var names = this._getAttrNames(name),
+				setter = this[names.s];
+			if(lang.isFunction(setter)){
+				// use the explicit setter
+				var result = setter.apply(this, Array.prototype.slice.call(arguments, 1));
+			}else{
+				// Mapping from widget attribute to DOMNode/subwidget attribute/value/etc.
+				// Map according to:
+				//		1. attributeMap setting, if one exists (TODO: attributeMap deprecated, remove in 2.0)
+				//		2. _setFooAttr: {...} type attribute in the widget (if one exists)
+				//		3. apply to focusNode or domNode if standard attribute name, excluding funcs like onClick.
+				// Checks if an attribute is a "standard attribute" by whether the DOMNode JS object has a similar
+				// attribute name (ex: accept-charset attribute matches jsObject.acceptCharset).
+				// Note also that Tree.focusNode() is a function not a DOMNode, so test for that.
+				var defaultNode = this.focusNode && !lang.isFunction(this.focusNode) ? "focusNode" : "domNode",
+					tag = this[defaultNode] && this[defaultNode].tagName,
+					attrsForTag = tag && (tagAttrs[tag] || (tagAttrs[tag] = getAttrs(this[defaultNode]))),
+					map = name in this.attributeMap ? this.attributeMap[name] :
+						names.s in this ? this[names.s] :
+							((attrsForTag && names.l in attrsForTag && typeof value != "function") ||
+								/^aria-|^data-|^role$/.test(name)) ? defaultNode : null;
+				if(map != null){
+					this._attrToDom(name, value, map);
+				}
+				this._set(name, value);
+			}
+			return result || this;
+		},
+
+		_attrPairNames: {}, // shared between all widgets
+		_getAttrNames: function(name){
+			// summary:
+			//		Helper function for get() and set().
+			//		Caches attribute name values so we don't do the string ops every time.
+			// tags:
+			//		private
+
+			var apn = this._attrPairNames;
+			if(apn[name]){
+				return apn[name];
+			}
+			var uc = name.replace(/^[a-z]|-[a-zA-Z]/g, function(c){
+				return c.charAt(c.length - 1).toUpperCase();
+			});
+			return (apn[name] = {
+				n: name + "Node",
+				s: "_set" + uc + "Attr", // converts dashes to camel case, ex: accept-charset --> _setAcceptCharsetAttr
+				g: "_get" + uc + "Attr",
+				l: uc.toLowerCase()        // lowercase name w/out dashes, ex: acceptcharset
+			});
+		},
+
+		_set: function(/*String*/ name, /*anything*/ value){
+			// summary:
+			//		Helper function to set new value for specified property, and call handlers
+			//		registered with watch() if the value has changed.
+			var oldValue = this[name];
+			this[name] = value;
+			if(this._created && value !== oldValue){
+				if(this._watchCallbacks){
+					this._watchCallbacks(name, oldValue, value);
+				}
+				this.emit("attrmodified-" + name, {
+					detail: {
+						prevValue: oldValue,
+						newValue: value
+					}
+				});
+			}
+		},
+
+		_get: function(/*String*/ name){
+			// summary:
+			//		Helper function to get value for specified property stored by this._set(),
+			//		i.e. for properties with custom setters.  Used mainly by custom getters.
+			//
+			//		For example, CheckBox._getValueAttr() calls this._get("value").
+
+			// future: return name in this.props ? this.props[name] : this[name];
+			return this[name];
+		},
+
+		emit: function(/*String*/ type, /*Object?*/ eventObj, /*Array?*/ callbackArgs){
+			// summary:
+			//		Used by widgets to signal that a synthetic event occurred, ex:
+			//	|	myWidget.emit("attrmodified-selectedChildWidget", {}).
+			//
+			//		Emits an event on this.domNode named type.toLowerCase(), based on eventObj.
+			//		Also calls onType() method, if present, and returns value from that method.
+			//		By default passes eventObj to callback, but will pass callbackArgs instead, if specified.
+			//		Modifies eventObj by adding missing parameters (bubbles, cancelable, widget).
+			// tags:
+			//		protected
+
+			// Specify fallback values for bubbles, cancelable in case they are not set in eventObj.
+			// Also set pointer to widget, although since we can't add a pointer to the widget for native events
+			// (see #14729), maybe we shouldn't do it here?
+			eventObj = eventObj || {};
+			if(eventObj.bubbles === undefined){
+				eventObj.bubbles = true;
+			}
+			if(eventObj.cancelable === undefined){
+				eventObj.cancelable = true;
+			}
+			if(!eventObj.detail){
+				eventObj.detail = {};
+			}
+			eventObj.detail.widget = this;
+
+			var ret, callback = this["on" + type];
+			if(callback){
+				ret = callback.apply(this, callbackArgs ? callbackArgs : [eventObj]);
+			}
+
+			// Emit event, but avoid spurious emit()'s as parent sets properties on child during startup/destroy
+			if(this._started && !this._beingDestroyed){
+				on.emit(this.domNode, type.toLowerCase(), eventObj);
+			}
+
+			return ret;
+		},
+
+		on: function(/*String|Function*/ type, /*Function*/ func){
+			// summary:
+			//		Call specified function when event occurs, ex: myWidget.on("click", function(){ ... }).
+			// type:
+			//		Name of event (ex: "click") or extension event like touch.press.
+			// description:
+			//		Call specified function when event `type` occurs, ex: `myWidget.on("click", function(){ ... })`.
+			//		Note that the function is not run in any particular scope, so if (for example) you want it to run in the
+			//		widget's scope you must do `myWidget.on("click", lang.hitch(myWidget, func))`.
+
+			// For backwards compatibility, if there's an onType() method in the widget then connect to that.
+			// Remove in 2.0.
+			var widgetMethod = this._onMap(type);
+			if(widgetMethod){
+				return aspect.after(this, widgetMethod, func, true);
+			}
+
+			// Otherwise, just listen for the event on this.domNode.
+			return this.own(on(this.domNode, type, func))[0];
+		},
+
+		_onMap: function(/*String|Function*/ type){
+			// summary:
+			//		Maps on() type parameter (ex: "mousemove") to method name (ex: "onMouseMove").
+			//		If type is a synthetic event like touch.press then returns undefined.
+			var ctor = this.constructor, map = ctor._onMap;
+			if(!map){
+				map = (ctor._onMap = {});
+				for(var attr in ctor.prototype){
+					if(/^on/.test(attr)){
+						map[attr.replace(/^on/, "").toLowerCase()] = attr;
+					}
+				}
+			}
+			return map[typeof type == "string" && type.toLowerCase()];	// String
+		},
+
+		toString: function(){
+			// summary:
+			//		Returns a string that represents the widget.
+			// description:
+			//		When a widget is cast to a string, this method will be used to generate the
+			//		output. Currently, it does not implement any sort of reversible
+			//		serialization.
+			return '[Widget ' + this.declaredClass + ', ' + (this.id || 'NO ID') + ']'; // String
+		},
+
+		getChildren: function(){
+			// summary:
+			//		Returns all direct children of this widget, i.e. all widgets underneath this.containerNode whose parent
+			//		is this widget.   Note that it does not return all descendants, but rather just direct children.
+			//		Analogous to [Node.childNodes](https://developer.mozilla.org/en-US/docs/DOM/Node.childNodes),
+			//		except containing widgets rather than DOMNodes.
+			//
+			//		The result intentionally excludes internally created widgets (a.k.a. supporting widgets)
+			//		outside of this.containerNode.
+			//
+			//		Note that the array returned is a simple array.  Application code should not assume
+			//		existence of methods like forEach().
+
+			return this.containerNode ? registry.findWidgets(this.containerNode) : []; // dijit/_WidgetBase[]
+		},
+
+		getParent: function(){
+			// summary:
+			//		Returns the parent widget of this widget.
+
+			return registry.getEnclosingWidget(this.domNode.parentNode);
+		},
+
+		connect: function(/*Object|null*/ obj, /*String|Function*/ event, /*String|Function*/ method){
+			// summary:
+			//		Deprecated, will be removed in 2.0, use this.own(on(...)) or this.own(aspect.after(...)) instead.
+			//
+			//		Connects specified obj/event to specified method of this object
+			//		and registers for disconnect() on widget destroy.
+			//
+			//		Provide widget-specific analog to dojo.connect, except with the
+			//		implicit use of this widget as the target object.
+			//		Events connected with `this.connect` are disconnected upon
+			//		destruction.
+			// returns:
+			//		A handle that can be passed to `disconnect` in order to disconnect before
+			//		the widget is destroyed.
+			// example:
+			//	|	var btn = new Button();
+			//	|	// when foo.bar() is called, call the listener we're going to
+			//	|	// provide in the scope of btn
+			//	|	btn.connect(foo, "bar", function(){
+			//	|		console.debug(this.toString());
+			//	|	});
+			// tags:
+			//		protected
+
+			return this.own(connect.connect(obj, event, this, method))[0];	// handle
+		},
+
+		disconnect: function(handle){
+			// summary:
+			//		Deprecated, will be removed in 2.0, use handle.remove() instead.
+			//
+			//		Disconnects handle created by `connect`.
+			// tags:
+			//		protected
+
+			handle.remove();
+		},
+
+		subscribe: function(t, method){
+			// summary:
+			//		Deprecated, will be removed in 2.0, use this.own(topic.subscribe()) instead.
+			//
+			//		Subscribes to the specified topic and calls the specified method
+			//		of this object and registers for unsubscribe() on widget destroy.
+			//
+			//		Provide widget-specific analog to dojo.subscribe, except with the
+			//		implicit use of this widget as the target object.
+			// t: String
+			//		The topic
+			// method: Function
+			//		The callback
+			// example:
+			//	|	var btn = new Button();
+			//	|	// when /my/topic is published, this button changes its label to
+			//	|	// be the parameter of the topic.
+			//	|	btn.subscribe("/my/topic", function(v){
+			//	|		this.set("label", v);
+			//	|	});
+			// tags:
+			//		protected
+			return this.own(topic.subscribe(t, lang.hitch(this, method)))[0];	// handle
+		},
+
+		unsubscribe: function(/*Object*/ handle){
+			// summary:
+			//		Deprecated, will be removed in 2.0, use handle.remove() instead.
+			//
+			//		Unsubscribes handle created by this.subscribe.
+			//		Also removes handle from this widget's list of subscriptions
+			// tags:
+			//		protected
+
+			handle.remove();
+		},
+
+		isLeftToRight: function(){
+			// summary:
+			//		Return this widget's explicit or implicit orientation (true for LTR, false for RTL)
+			// tags:
+			//		protected
+			return this.dir ? (this.dir == "ltr") : domGeometry.isBodyLtr(this.ownerDocument); //Boolean
+		},
+
+		isFocusable: function(){
+			// summary:
+			//		Return true if this widget can currently be focused
+			//		and false if not
+			return this.focus && (domStyle.get(this.domNode, "display") != "none");
+		},
+
+		placeAt: function(/* String|DomNode|_Widget */ reference, /* String|Int? */ position){
+			// summary:
+			//		Place this widget somewhere in the DOM based
+			//		on standard domConstruct.place() conventions.
+			// description:
+			//		A convenience function provided in all _Widgets, providing a simple
+			//		shorthand mechanism to put an existing (or newly created) Widget
+			//		somewhere in the dom, and allow chaining.
+			// reference:
+			//		Widget, DOMNode, or id of widget or DOMNode
+			// position:
+			//		If reference is a widget (or id of widget), and that widget has an ".addChild" method,
+			//		it will be called passing this widget instance into that method, supplying the optional
+			//		position index passed.  In this case position (if specified) should be an integer.
+			//
+			//		If reference is a DOMNode (or id matching a DOMNode but not a widget),
+			//		the position argument can be a numeric index or a string
+			//		"first", "last", "before", or "after", same as dojo/dom-construct::place().
+			// returns: dijit/_WidgetBase
+			//		Provides a useful return of the newly created dijit._Widget instance so you
+			//		can "chain" this function by instantiating, placing, then saving the return value
+			//		to a variable.
+			// example:
+			//	|	// create a Button with no srcNodeRef, and place it in the body:
+			//	|	var button = new Button({ label:"click" }).placeAt(win.body());
+			//	|	// now, 'button' is still the widget reference to the newly created button
+			//	|	button.on("click", function(e){ console.log('click'); }));
+			// example:
+			//	|	// create a button out of a node with id="src" and append it to id="wrapper":
+			//	|	var button = new Button({},"src").placeAt("wrapper");
+			// example:
+			//	|	// place a new button as the first element of some div
+			//	|	var button = new Button({ label:"click" }).placeAt("wrapper","first");
+			// example:
+			//	|	// create a contentpane and add it to a TabContainer
+			//	|	var tc = dijit.byId("myTabs");
+			//	|	new ContentPane({ href:"foo.html", title:"Wow!" }).placeAt(tc)
+
+			var refWidget = !reference.tagName && registry.byId(reference);
+			if(refWidget && refWidget.addChild && (!position || typeof position === "number")){
+				// Adding this to refWidget and can use refWidget.addChild() to handle everything.
+				refWidget.addChild(this, position);
+			}else{
+				// "reference" is a plain DOMNode, or we can't use refWidget.addChild().   Use domConstruct.place() and
+				// target refWidget.containerNode for nested placement (position==number, "first", "last", "only"), and
+				// refWidget.domNode otherwise ("after"/"before"/"replace").  (But not supported officially, see #14946.)
+				var ref = refWidget ?
+					(refWidget.containerNode && !/after|before|replace/.test(position || "") ?
+						refWidget.containerNode : refWidget.domNode) : dom.byId(reference, this.ownerDocument);
+				domConstruct.place(this.domNode, ref, position);
+
+				// Start this iff it has a parent widget that's already started.
+				// TODO: for 2.0 maybe it should also start the widget when this.getParent() returns null??
+				if(!this._started && (this.getParent() || {})._started){
+					this.startup();
+				}
+			}
+			return this;
+		},
+
+		defer: function(fcn, delay){
+			// summary:
+			//		Wrapper to setTimeout to avoid deferred functions executing
+			//		after the originating widget has been destroyed.
+			//		Returns an object handle with a remove method (that returns null) (replaces clearTimeout).
+			// fcn: function reference
+			// delay: Optional number (defaults to 0)
+			// tags:
+			//		protected.
+			var timer = setTimeout(lang.hitch(this,
+				function(){
+					if(!timer){
+						return;
+					}
+					timer = null;
+					if(!this._destroyed){
+						lang.hitch(this, fcn)();
+					}
+				}),
+				delay || 0
+			);
+			return {
+				remove: function(){
+					if(timer){
+						clearTimeout(timer);
+						timer = null;
+					}
+					return null; // so this works well: handle = handle.remove();
+				}
+			};
+		}
+	});
+
+	if(has("dojo-bidi")){
+		_WidgetBase.extend(_BidiMixin);
+	}
+
+	return _WidgetBase;
+});
+
+},
+'dojo/Stateful':function(){
+define(["./_base/declare", "./_base/lang", "./_base/array", "./when"], function(declare, lang, array, when){
+	// module:
+	//		dojo/Stateful
+
+return declare("dojo.Stateful", null, {
+	// summary:
+	//		Base class for objects that provide named properties with optional getter/setter
+	//		control and the ability to watch for property changes
+	//
+	//		The class also provides the functionality to auto-magically manage getters
+	//		and setters for object attributes/properties.
+	//		
+	//		Getters and Setters should follow the format of _xxxGetter or _xxxSetter where 
+	//		the xxx is a name of the attribute to handle.  So an attribute of "foo" 
+	//		would have a custom getter of _fooGetter and a custom setter of _fooSetter.
+	//
+	// example:
+	//	|	var obj = new dojo.Stateful();
+	//	|	obj.watch("foo", function(){
+	//	|		console.log("foo changed to " + this.get("foo"));
+	//	|	});
+	//	|	obj.set("foo","bar");
+
+	// _attrPairNames: Hash
+	//		Used across all instances a hash to cache attribute names and their getter 
+	//		and setter names.
+	_attrPairNames: {},
+
+	_getAttrNames: function(name){
+		// summary:
+		//		Helper function for get() and set().
+		//		Caches attribute name values so we don't do the string ops every time.
+		// tags:
+		//		private
+
+		var apn = this._attrPairNames;
+		if(apn[name]){ return apn[name]; }
+		return (apn[name] = {
+			s: "_" + name + "Setter",
+			g: "_" + name + "Getter"
+		});
+	},
+
+	postscript: function(/*Object?*/ params){
+		// Automatic setting of params during construction
+		if (params){ this.set(params); }
+	},
+
+	_get: function(name, names){
+		// summary:
+		//		Private function that does a get based off a hash of names
+		// names:
+		//		Hash of names of custom attributes
+		return typeof this[names.g] === "function" ? this[names.g]() : this[name];
+	},
+	get: function(/*String*/name){
+		// summary:
+		//		Get a property on a Stateful instance.
+		// name:
+		//		The property to get.
+		// returns:
+		//		The property value on this Stateful instance.
+		// description:
+		//		Get a named property on a Stateful object. The property may
+		//		potentially be retrieved via a getter method in subclasses. In the base class
+		//		this just retrieves the object's property.
+		//		For example:
+		//	|	stateful = new dojo.Stateful({foo: 3});
+		//	|	stateful.get("foo") // returns 3
+		//	|	stateful.foo // returns 3
+
+		return this._get(name, this._getAttrNames(name)); //Any
+	},
+	set: function(/*String*/name, /*Object*/value){
+		// summary:
+		//		Set a property on a Stateful instance
+		// name:
+		//		The property to set.
+		// value:
+		//		The value to set in the property.
+		// returns:
+		//		The function returns this dojo.Stateful instance.
+		// description:
+		//		Sets named properties on a stateful object and notifies any watchers of
+		//		the property. A programmatic setter may be defined in subclasses.
+		//		For example:
+		//	|	stateful = new dojo.Stateful();
+		//	|	stateful.watch(function(name, oldValue, value){
+		//	|		// this will be called on the set below
+		//	|	}
+		//	|	stateful.set(foo, 5);
+		//
+		//	set() may also be called with a hash of name/value pairs, ex:
+		//	|	myObj.set({
+		//	|		foo: "Howdy",
+		//	|		bar: 3
+		//	|	})
+		//	This is equivalent to calling set(foo, "Howdy") and set(bar, 3)
+
+		// If an object is used, iterate through object
+		if(typeof name === "object"){
+			for(var x in name){
+				if(name.hasOwnProperty(x) && x !="_watchCallbacks"){
+					this.set(x, name[x]);
+				}
+			}
+			return this;
+		}
+
+		var names = this._getAttrNames(name),
+			oldValue = this._get(name, names),
+			setter = this[names.s],
+			result;
+		if(typeof setter === "function"){
+			// use the explicit setter
+			result = setter.apply(this, Array.prototype.slice.call(arguments, 1));
+		}else{
+			// no setter so set attribute directly
+			this[name] = value;
+		}
+		if(this._watchCallbacks){
+			var self = this;
+			// If setter returned a promise, wait for it to complete, otherwise call watches immediatly
+			when(result, function(){
+				self._watchCallbacks(name, oldValue, value);
+			});
+		}
+		return this; // dojo/Stateful
+	},
+	_changeAttrValue: function(name, value){
+		// summary:
+		//		Internal helper for directly changing an attribute value.
+		//
+		// name: String
+		//		The property to set.
+		// value: Mixed
+		//		The value to set in the property.
+		//
+		// description:
+		//		Directly change the value of an attribute on an object, bypassing any 
+		//		accessor setter.  Also handles the calling of watch and emitting events. 
+		//		It is designed to be used by descendent class when there are two values 
+		//		of attributes that are linked, but calling .set() is not appropriate.
+
+		var oldValue = this.get(name);
+		this[name] = value;
+		if(this._watchCallbacks){
+			this._watchCallbacks(name, oldValue, value);
+		}
+		return this; // dojo/Stateful
+	},
+	watch: function(/*String?*/name, /*Function*/callback){
+		// summary:
+		//		Watches a property for changes
+		// name:
+		//		Indicates the property to watch. This is optional (the callback may be the
+		//		only parameter), and if omitted, all the properties will be watched
+		// returns:
+		//		An object handle for the watch. The unwatch method of this object
+		//		can be used to discontinue watching this property:
+		//		|	var watchHandle = obj.watch("foo", callback);
+		//		|	watchHandle.unwatch(); // callback won't be called now
+		// callback:
+		//		The function to execute when the property changes. This will be called after
+		//		the property has been changed. The callback will be called with the |this|
+		//		set to the instance, the first argument as the name of the property, the
+		//		second argument as the old value and the third argument as the new value.
+
+		var callbacks = this._watchCallbacks;
+		if(!callbacks){
+			var self = this;
+			callbacks = this._watchCallbacks = function(name, oldValue, value, ignoreCatchall){
+				var notify = function(propertyCallbacks){
+					if(propertyCallbacks){
+						propertyCallbacks = propertyCallbacks.slice();
+						for(var i = 0, l = propertyCallbacks.length; i < l; i++){
+							propertyCallbacks[i].call(self, name, oldValue, value);
+						}
+					}
+				};
+				notify(callbacks['_' + name]);
+				if(!ignoreCatchall){
+					notify(callbacks["*"]); // the catch-all
+				}
+			}; // we use a function instead of an object so it will be ignored by JSON conversion
+		}
+		if(!callback && typeof name === "function"){
+			callback = name;
+			name = "*";
+		}else{
+			// prepend with dash to prevent name conflicts with function (like "name" property)
+			name = '_' + name;
+		}
+		var propertyCallbacks = callbacks[name];
+		if(typeof propertyCallbacks !== "object"){
+			propertyCallbacks = callbacks[name] = [];
+		}
+		propertyCallbacks.push(callback);
+
+		// TODO: Remove unwatch in 2.0
+		var handle = {};
+		handle.unwatch = handle.remove = function(){
+			var index = array.indexOf(propertyCallbacks, callback);
+			if(index > -1){
+				propertyCallbacks.splice(index, 1);
+			}
+		};
+		return handle; //Object
+	}
+
+});
+
 });
 
 },
@@ -13395,6 +9774,4088 @@ define(["require", "dojo/when", "dojo/on", "dojo/dom-attr", "dojo/_base/declare"
 });
 
 },
+'app/views/view1/view1Ctrl':function(){
+/*jslint nomen: true */
+/*jshint nomen: true */
+/*global _, define, console, alert */
+define([
+    'dojo/_base/declare',
+    'dojo/query!css3',
+    //query is the core of dojo dom query
+    // the return is NodeList that has full set of functions
+    // most of the function have same syntax as jquery see bellow this file for summary
+    'dojo/on',
+    'dojox/mobile/ListItem',
+    'dojo/NodeList-manipulate'
+    // Load dojo/NodeList-manipulate to get JQuery syntax: see below this file for function syntax
+], function (declare, $, on, ListItem) {
+    'use strict';
+
+    var handles,
+        viewNode,
+        count = 0,
+        DataListItem = declare(ListItem, {
+            target: "requestItemDetails"
+        });
+
+
+
+    return {
+        DataListItem: DataListItem,
+
+        init: function (params) {
+            // summary:
+            //      view life cycle init()
+            console.log(this.name + " view:init()");
+
+            //save the view node in clousure to use as scope for dom manipulatation and query
+            viewNode = this.domNode;
+
+        },
+
+        beforeActivate: function (view, data) {
+            // summary:
+            //      view life cycle beforeActivate()
+            console.log(this.name + " view:beforeActivate(view,data)");
+        },
+
+        afterActivate: function (view, data) {
+            // summary:
+            //      view life cycle afterActivate()
+            console.log(this.name + " view:afterActivate(view,data)");
+            //Atach onclick event to fire once
+            // TIP: Always scope your query selector to the View using viewNode
+            on.once($("#doSomethingOnce", viewNode), "click", this.doSomething);
+            //If using jquery the syntaxt will be: $("#doSomethingOnce", viewNode).one("click",this.doSomething)
+            //$("#doSomethingOnce",viewNode).one("click", this.doSomething);
+            count = 0;
+
+            //Use jquery syntax here .val() and .sytle() depends on loading dojo/NodeList-manipulate
+            $('input[type="text"]', viewNode).val("iddle").style("color", "red");
+
+        },
+
+        beforeDeactivate: function (view, data) {
+            // summary:
+            //      view life cycle beforeDeactivate()
+            console.log(this.name + " view:beforeDeactivate(view,data)");
+        },
+
+        afterDeactivate: function (view, data) {
+            // summary:
+            //      view life cycle afterDeactivate()
+            console.log(this.name + " view:afterDeactivate(view,data)");
+        },
+
+        destroy: function (params) {
+            // summary:
+            //      view life cycle destroy()
+            console.log(this.name + " view:destory()");
+        },
+        /*****
+         * Custom Code for View Controller
+         *****/
+
+        // JavaScript Primitives
+        'aNumber'    : 42,
+        'aString'    : 'Normal String',
+        'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
+        'aBoolean'   : true,
+        'aNull'      : null,
+
+        _formatterTmpl : function (value, key) {
+            // summary:
+            //      Use to format template properties using the convention ${foo:_formatterTmpl}
+            if (value === null) {
+                return "null";
+            }
+            if (key === "aString") {
+                return this.nls.view1_hello;
+            }
+
+            return value;
+
+        },
+        doSomething: function (event) {
+            console.log('did something');
+            // TIP: Always scope your query selector to the View using viewNode
+            //Use jquery syntax here .val() and .sytle() depends on loading dojo/NodeList-manipulate
+            $('input[type="text"]', viewNode).val("did something " + count);
+            count = count + 1;
+        }
+    };
+
+
+/*
+    - dojo/NodeList-manipulate
+    - Load dojo/NodeList-manipulate to get JQuery syntax:
+
+.html( value)
+.text(value)
+.val(value)
+.append(content)
+.appendTo(query)
+.prepend(content)
+.prependTo(query)
+.after(content)
+.insertAfter(query)
+.before(content)
+.insertBefore(query)
+.wrap(html)
+.wrapAll(html)
+.wrapInner(html)
+.replaceAll(query)
+.clone()
+
+*/
+
+/*  - dojo/query!css3
+    - NodeList functions dojo/query returns NodeList and supports chanining
+    - Read the docs or source for more info:
+        - (http://dojotoolkit.org/api/1.9/dojo/NodeList)
+
+.addClass(className) adds the specified class to every node in the list
+.addClassFx(cssClass, args) Animate the effects of adding a class to all nodes in this list. see dojox.fx.addClass
+.addContent(content, position) add a node, NodeList or some HTML as a string to every item in the list. Returns the original list.
+.adopt(queryOrListOrNode, position) places any/all elements in queryOrListOrNode at a position relative to the first element in this list.
+.after(content) Places the content after every node in the NodeList.
+.andSelf() Adds the nodes from the previous dojo/NodeList to the current dojo/NodeList.
+.anim(properties, duration, easing, onEnd, delay) Animate one or more CSS properties for all nodes in this list.
+.animateProperty(args) Animate all elements of this NodeList across the properties specified. syntax identical to dojo.animateProperty
+.append(content) appends the content to every node in the NodeList.
+.appendTo(query) appends nodes in this NodeList to the nodes matched by the query passed to appendTo.
+.at(index) Returns a new NodeList comprised of items in this NodeList at the given index or indices.
+.attr(property, value) gets or sets the DOM attribute for every element in the NodeList.
+.before(content) Places the content before every node in the NodeList.
+.children(query) Returns all immediate child elements for nodes in this dojo/NodeList. Optionally takes a query to filter the child elements.
+.clone() Clones all the nodes in this NodeList and returns them as a new NodeList.
+.closest(query, root) Returns closest parent that matches query, including current node in this dojo/NodeList if it matches the query.
+.concat(item) Returns a new NodeList comprised of items in this NodeList as well as items passed in as parameters
+.connect(methodName, objOrFunc, funcName) Attach event handlers to every item of the NodeList.
+.coords() Deprecated: Use position() for border-box x/y/w/h or marginBox() for margin-box w/h/l/t.
+.data(key, value) stash or get some arbitrary data on/from these nodes.
+.delegate(selector, eventName, fn) Monitor nodes in this NodeList for [bubbled] events on nodes that match selector. Calls fn(evt) for those events, where (inside of fn()), this == the node that matches the selector.
+.dtl(template, context) Renders the specified template in each of the NodeList entries.
+.empty() clears all content from each node in the list.
+.end() Ends use of the current NodeList by returning the previous NodeList that generated the current NodeList.
+.even() Returns the even nodes in this dojo/NodeList as a dojo/NodeList.
+.every(callback, thisObject) see dojo.every() and the Array.every docs.
+.fadeIn(args) fade in all elements of this NodeList via dojo.fadeIn
+.fadeOut(args) fade out all elements of this NodeList via dojo.fadeOut
+.filter(filter) "masks" the built-in javascript filter() method (supported in Dojo via dojo.filter) to support passing a simple string filter in addition to supporting filtering function objects.
+.first() Returns the first node in this dojo/NodeList as a dojo/NodeList.
+.forEach(callback, thisObj) see dojo.forEach().
+.html(value) allows setting the innerHTML of each node in the NodeList, if there is a value passed in, otherwise, reads the innerHTML value of the first node.
+.indexOf(value, fromIndex) see dojo.indexOf(). The primary difference is that the acted-on array is implicitly this NodeList
+.innerHTML(value) allows setting the innerHTML of each node in the NodeList, if there is a value passed in, otherwise, reads the innerHTML value of the first node.
+.insertAfter(query) The nodes in this NodeList will be placed after the nodes matched by the query passed to insertAfter.
+.insertBefore(query) The nodes in this NodeList will be placed after the nodes matched by the query passed to insertAfter.
+.instantiate(declaredClass, properties) Create a new instance of a specified class, using the specified properties and each node in the NodeList as a srcNodeRef.
+.last() Returns the last node in this dojo/NodeList as a dojo/NodeList.
+.lastIndexOf(value, fromIndex) see dojo.lastIndexOf(). The primary difference is that the acted-on array is implicitly this NodeList
+.map(func, obj) see dojo.map().
+.marginBox() Returns margin-box size of nodes
+.next(query) Returns the next element for nodes in this dojo/NodeList. Optionally takes a query to filter the next elements.
+.nextAll(query) Returns all sibling elements that come after the nodes in this dojo/NodeList. Optionally takes a query to filter the sibling elements.
+.odd() Returns the odd nodes in this dojo/NodeList as a dojo/NodeList.
+.on(eventName, listener) Listen for events on the nodes in the NodeList.
+.orphan(filter) removes elements in this list that match the filter from their parents and returns them as a new NodeList.
+.parent(query) Returns immediate parent elements for nodes in this dojo/NodeList. Optionally takes a query to filter the parent elements.
+.parents(query) Returns all parent elements for nodes in this dojo/NodeList. Optionally takes a query to filter the child elements.
+.place(queryOrNode, position) places elements of this node list relative to the first element matched by queryOrNode.
+.position() Returns border-box objects (x/y/w/h) of all elements in a node list as an Array (not a NodeList).
+.prepend(content) prepends the content to every node in the NodeList.
+.prependTo(query) prepends nodes in this NodeList to the nodes matched by the query passed to prependTo.
+.prev(query) Returns the previous element for nodes in this dojo/NodeList. Optionally takes a query to filter the previous elements.
+.prevAll(query) Returns all sibling elements that come before the nodes in this dojo/NodeList. Optionally takes a query to filter the sibling elements.
+.query(queryStr) Returns a new list whose members match the passed query, assuming elements of the current NodeList as the root for each search.
+.remove(filter) removes elements in this list that match the filter from their parents and returns them as a new NodeList.
+.removeAttr(name) Removes an attribute from each node in the list.
+.removeClass(className) removes the specified class from every node in the list
+.removeClassFx(cssClass, args) Animate the effect of removing a class to all nodes in this list. see dojox.fx.removeClass
+.removeData(key) Remove the data associated with these nodes.
+.replaceAll(query) replaces nodes matched by the query passed to replaceAll with the nodes in this NodeList.
+.replaceClass(addClassStr, removeClassStr) Replaces one or more classes on a node if not present.
+.replaceWith(content) Replaces each node in ths NodeList with the content passed to replaceWith.
+.siblings(query) Returns all sibling elements for nodes in this dojo/NodeList. Optionally takes a query to filter the sibling elements.
+.slice(begin, end) Returns a new NodeList, maintaining this one in place
+.slideTo(args) slide all elements of the node list to the specified place via dojo/fx.slideTo()
+.some(callback, thisObject) Takes the same structure of arguments and returns as dojo.some() with the caveat that the passed array is implicitly this NodeList.
+.splice(index, howmany, item) Returns a new NodeList, manipulating this NodeList based on the arguments passed, potentially splicing in new elements at an offset, optionally deleting elements
+.style(property, value) gets or sets the CSS property for every element in the NodeList
+.text(value) allows setting the text value of each node in the NodeList, if there is a value passed in, otherwise, returns the text value for all the nodes in the NodeList in one string.
+.toggleClass(className, condition) Adds a class to node if not present, or removes if present.
+.toggleClassFx(cssClass, force, args) Animate the effect of adding or removing a class to all nodes in this list. see dojox.fx.toggleClass
+.toString()
+.val(value) If a value is passed, allows seting the value property of form elements in this NodeList, or properly selecting/checking the right value for radio/checkbox/select elements.
+.wipeIn(args) wipe in all elements of this NodeList via dojo/fx.wipeIn()
+.wipeOut(args) wipe out all elements of this NodeList via dojo/fx.wipeOut()
+.wrap(html) Wrap each node in the NodeList with html passed to wrap.
+.wrapAll(html) Insert html where the first node in this NodeList lives, then place all nodes in this NodeList as the child of the html.
+.wrapInner(html) For each node in the NodeList, wrap all its children with the passed in html..
+*/
+
+});
+
+},
+'dojox/mobile/ListItem':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/_base/lang",
+	"dojo/dom-class",
+	"dojo/dom-construct",
+	"dojo/dom-style",
+	"dojo/dom-attr",
+	"dijit/registry",
+	"dijit/_WidgetBase",
+	"./iconUtils",
+	"./_ItemBase",
+	"./ProgressIndicator",
+	"dojo/has",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/ListItem"
+], function(array, declare, lang, domClass, domConstruct, domStyle, domAttr, registry, WidgetBase, iconUtils, ItemBase, ProgressIndicator, has,  BidiListItem){
+
+	// module:
+	//		dojox/mobile/ListItem
+
+	var ListItem = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiListItem" : "dojox.mobile.ListItem", ItemBase, {
+		// summary:
+		//		An item of either RoundRectList or EdgeToEdgeList.
+		// description:
+		//		ListItem represents an item of either RoundRectList or
+		//		EdgeToEdgeList. There are three ways to move to a different view:
+		//		moveTo, href, and url. You can choose only one of them.
+		//
+		//		A child DOM node (or widget) can have the layout attribute,
+		//		whose value is "left", "right", or "center". Such nodes will be
+		//		aligned as specified.
+		// example:
+		// |	<li data-dojo-type="dojox.mobile.ListItem">
+		// |		<div layout="left">Left Node</div>
+		// |		<div layout="right">Right Node</div>
+		// |		<div layout="center">Center Node</div>
+		// |	</li>
+		//
+		//		Note that even if you specify variableHeight="true" for the list
+		//		and place a tall object inside the layout node as in the example
+		//		below, the layout node does not expand as you may expect,
+		//		because layout node is aligned using float:left, float:right, or
+		//		position:absolute.
+		// example:
+		// |	<li data-dojo-type="dojox.mobile.ListItem" variableHeight="true">
+		// |		<div layout="left"><img src="large-picture.jpg"></div>
+		// |	</li>
+
+		// rightText: String
+		//		A right-aligned text to display on the item.
+		rightText: "",
+
+		// rightIcon: String
+		//		An icon to display at the right hand side of the item. The value
+		//		can be either a path for an image file or a class name of a DOM
+		//		button.
+		rightIcon: "",
+
+		// rightIcon2: String
+		//		An icon to display at the left of the rightIcon. The value can
+		//		be either a path for an image file or a class name of a DOM
+		//		button.
+		rightIcon2: "",
+
+		// deleteIcon: String
+		//		A delete icon to display at the left of the item. The value can
+		//		be either a path for an image file or a class name of a DOM
+		//		button.
+		deleteIcon: "",
+
+		// anchorLabel: Boolean
+		//		If true, the label text becomes a clickable anchor text. When
+		//		the user clicks on the text, the onAnchorLabelClicked handler is
+		//		called. You can override or connect to the handler and implement
+		//		any action. The handler has no default action.
+		anchorLabel: false,
+
+		// noArrow: Boolean
+		//		If true, the right hand side arrow is not displayed.
+		noArrow: false,
+
+		// checked: Boolean
+		//		If true, a check mark is displayed at the right of the item.
+		checked: false,
+
+		// arrowClass: String
+		//		An icon to display as an arrow. The value can be either a path
+		//		for an image file or a class name of a DOM button.
+		arrowClass: "",
+
+		// checkClass: String
+		//		An icon to display as a check mark. The value can be either a
+		//		path for an image file or a class name of a DOM button.
+		checkClass: "",
+
+		// uncheckClass: String
+		//		An icon to display as an uncheck mark. The value can be either a
+		//		path for an image file or a class name of a DOM button.
+		uncheckClass: "",
+
+		// variableHeight: Boolean
+		//		If true, the height of the item varies according to its content.
+		variableHeight: false,
+
+		// rightIconTitle: String
+		//		An alt text for the right icon.
+		rightIconTitle: "",
+
+		// rightIcon2Title: String
+		//		An alt text for the right icon2.
+		rightIcon2Title: "",
+
+		// header: Boolean
+		//		If true, this item is rendered as a category header.
+		header: false,
+
+		// tag: String
+		//		A name of html tag to create as domNode.
+		tag: "li",
+
+		// busy: Boolean
+		//		If true, a progress indicator spins.
+		busy: false,
+
+		// progStyle: String
+		//		A css class name to add to the progress indicator.
+		progStyle: "",
+
+		/* internal properties */	
+		// The following properties are overrides of those in _ItemBase.
+		paramsToInherit: "variableHeight,transition,deleteIcon,icon,rightIcon,rightIcon2,uncheckIcon,arrowClass,checkClass,uncheckClass,deleteIconTitle,deleteIconRole",
+		baseClass: "mblListItem",
+
+		_selStartMethod: "touch",
+		_selEndMethod: "timer",
+		_delayedSelection: true,
+
+		_selClass: "mblListItemSelected",
+
+		buildRendering: function(){
+			this._templated = !!this.templateString; // true if this widget is templated
+			if(!this._templated){
+				// Create root node if it wasn't created by _TemplatedMixin
+				this.domNode = this.containerNode = this.srcNodeRef || domConstruct.create(this.tag);
+			}
+			this.inherited(arguments);
+
+			if(this.selected){
+				domClass.add(this.domNode, this._selClass);
+			}
+			if(this.header){
+				domClass.replace(this.domNode, "mblEdgeToEdgeCategory", this.baseClass);
+			}
+
+			if(!this._templated){
+				this.labelNode =
+					domConstruct.create("div", {className:"mblListItemLabel"});
+				var ref = this.srcNodeRef;
+				if(ref && ref.childNodes.length === 1 && ref.firstChild.nodeType === 3){
+					// if ref has only one text node, regard it as a label
+					this.labelNode.appendChild(ref.firstChild);
+				}
+				this.domNode.appendChild(this.labelNode);
+			}
+			this._layoutChildren = [];
+		},
+
+		startup: function(){
+			if(this._started){ return; }
+			var parent = this.getParent();
+			var opts = this.getTransOpts();
+			// When using a template, labelNode may be created via an attach point.
+			// The attach points are not yet set when ListItem.buildRendering() 
+			// executes, hence the need to use them in startup().
+			if((!this._templated || this.labelNode) && this.anchorLabel){
+				this.labelNode.style.display = "inline"; // to narrow the text region
+				this.labelNode.style.cursor = "pointer";
+				this.connect(this.labelNode, "onclick", "_onClick");
+				this.onTouchStart = function(e){
+					return (e.target !== this.labelNode);
+				};
+			}
+			if(opts.moveTo || opts.href || opts.url || this.clickable || (parent && parent.select)){
+				this.connect(this.domNode, "onkeydown", "_onClick"); // for desktop browsers
+			}else{
+				this._handleClick = false;
+			}
+
+			this.inherited(arguments);
+			
+			if(domClass.contains(this.domNode, "mblVariableHeight")){
+				this.variableHeight = true;
+			}
+			if(this.variableHeight){
+				domClass.add(this.domNode, "mblVariableHeight");
+				this.defer("layoutVariableHeight");
+			}
+
+			if(!this._isOnLine){
+				this._isOnLine = true;
+				this.set({ 
+					// retry applying the attributes for which the custom setter delays the actual 
+					// work until _isOnLine is true
+					icon: this._pending_icon !== undefined ? this._pending_icon : this.icon,
+					deleteIcon: this._pending_deleteIcon !== undefined ? this._pending_deleteIcon : this.deleteIcon,
+					rightIcon: this._pending_rightIcon !== undefined ? this._pending_rightIcon : this.rightIcon,
+					rightIcon2: this._pending_rightIcon2 !== undefined ? this._pending_rightIcon2 : this.rightIcon2,
+					uncheckIcon: this._pending_uncheckIcon !== undefined ? this._pending_uncheckIcon : this.uncheckIcon 
+				});
+				// Not needed anymore (this code executes only once per life cycle):
+				delete this._pending_icon;
+				delete this._pending_deleteIcon;
+				delete this._pending_rightIcon;
+				delete this._pending_rightIcon2;
+				delete this._pending_uncheckIcon;
+			}
+			if(parent && parent.select){
+				// retry applying the attributes for which the custom setter delays the actual 
+				// work until _isOnLine is true. 
+				this.set("checked", this._pendingChecked !== undefined ? this._pendingChecked : this.checked);
+				domAttr.set(this.domNode, "role", "option");
+				if(this._pendingChecked || this.checked){
+					domAttr.set(this.domNode, "aria-selected", "true");
+				}
+				// Not needed anymore (this code executes only once per life cycle):
+				delete this._pendingChecked; 
+			}
+			this.setArrow();
+			this.layoutChildren();
+		},
+
+		_updateHandles: function(){
+			// tags:
+			//		private
+			var parent = this.getParent();
+			var opts = this.getTransOpts();
+			if(opts.moveTo || opts.href || opts.url || this.clickable || (parent && parent.select)){
+				if(!this._keydownHandle){
+					this._keydownHandle = this.connect(this.domNode, "onkeydown", "_onClick"); // for desktop browsers
+				}
+				this._handleClick = true;
+			}else{
+				if(this._keydownHandle){
+					this.disconnect(this._keydownHandle);
+					this._keydownHandle = null;
+				}
+				this._handleClick = false;
+			}
+			this.inherited(arguments);
+		},
+
+		layoutChildren: function(){
+			var centerNode;
+			array.forEach(this.domNode.childNodes, function(n){
+				if(n.nodeType !== 1){ return; }
+				var layout = n.getAttribute("layout") || // TODO: Remove the non-HTML5-compliant attribute in 2.0
+					n.getAttribute("data-mobile-layout") || 
+					(registry.byNode(n) || {}).layout;
+				if(layout){ 
+					domClass.add(n, "mblListItemLayout" +
+						layout.charAt(0).toUpperCase() + layout.substring(1));
+					this._layoutChildren.push(n);
+					if(layout === "center"){ centerNode = n; }
+				}
+			}, this);
+			if(centerNode){
+				this.domNode.insertBefore(centerNode, this.domNode.firstChild);
+			}
+		},
+
+		resize: function(){
+			if(this.variableHeight){
+				this.layoutVariableHeight();
+			}
+
+			// labelNode may not exist only when using a template (if not created by an attach point)
+			if(!this._templated || this.labelNode){
+				// If labelNode is empty, shrink it so as not to prevent user clicks.
+				this.labelNode.style.display = this.labelNode.firstChild ? "block" : "inline";
+			}
+		},
+
+		_onTouchStart: function(e){
+			// tags:
+			//		private
+			if(e.target.getAttribute("preventTouch") || // TODO: Remove the non-HTML5-compliant attribute in 2.0
+				e.target.getAttribute("data-mobile-prevent-touch") ||
+				(registry.getEnclosingWidget(e.target) || {}).preventTouch){
+				return;
+			}
+			this.inherited(arguments);
+		},
+
+		_onClick: function(e){
+			// summary:
+			//		Internal handler for click events.
+			// tags:
+			//		private
+			if(this.getParent().isEditing || e && e.type === "keydown" && e.keyCode !== 13){ return; }
+			if(this.onClick(e) === false){ return; } // user's click action
+			var n = this.labelNode;
+			// labelNode may not exist only when using a template 
+			if((this._templated || n) && this.anchorLabel && e.currentTarget === n){
+				domClass.add(n, "mblListItemLabelSelected");
+				this.defer(function(){
+					domClass.remove(n, "mblListItemLabelSelected");
+				}, this._duration);
+				this.onAnchorLabelClicked(e);
+				return;
+			}
+			var parent = this.getParent();
+			if(parent.select){
+				if(parent.select === "single"){
+					if(!this.checked){
+						this.set("checked", true);
+					}
+				}else if(parent.select === "multiple"){
+					this.set("checked", !this.checked);
+				}
+			}
+			this.defaultClickAction(e);
+		},
+
+		onClick: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		User-defined function to handle clicks.
+			// tags:
+			//		callback
+		},
+
+		onAnchorLabelClicked: function(e){
+			// summary:
+			//		Stub function to connect to from your application.
+		},
+
+		layoutVariableHeight: function(){
+			// summary:
+			//		Lays out the current item with variable height.
+			var h = this.domNode.offsetHeight;
+			if(h === this.domNodeHeight){ return; }
+			this.domNodeHeight = h;
+			array.forEach(this._layoutChildren.concat([
+				this.rightTextNode,
+				this.rightIcon2Node,
+				this.rightIconNode,
+				this.uncheckIconNode,
+				this.iconNode,
+				this.deleteIconNode,
+				this.knobIconNode
+			]), function(n){
+				if(n){
+					var domNode = this.domNode;
+					var f = function(){
+						var t = Math.round((domNode.offsetHeight - n.offsetHeight) / 2) -
+							domStyle.get(domNode, "paddingTop");
+						n.style.marginTop = t + "px";
+					}
+					if(n.offsetHeight === 0 && n.tagName === "IMG"){
+						n.onload = f;
+					}else{
+						f();
+					}
+				}
+			}, this);
+		},
+
+		setArrow: function(){
+			// summary:
+			//		Sets the arrow icon if necessary.
+			if(this.checked){ return; }
+			var c = "";
+			var parent = this.getParent();
+			var opts = this.getTransOpts();
+			if(opts.moveTo || opts.href || opts.url || this.clickable){
+				if(!this.noArrow && !(parent && parent.selectOne)){
+					c = this.arrowClass || "mblDomButtonArrow";
+					domAttr.set(this.domNode, "role", "button");
+				}
+			}
+			if(c){
+				this._setRightIconAttr(c);
+			}
+		},
+
+		_findRef: function(/*String*/type){
+			// summary:
+			//		Find an appropriate position to insert a new child node.
+			// tags:
+			//		private
+			var i, node, list = ["deleteIcon", "icon", "rightIcon", "uncheckIcon", "rightIcon2", "rightText"];
+			for(i = array.indexOf(list, type) + 1; i < list.length; i++){
+				node = this[list[i] + "Node"];
+				if(node){ return node; }
+			}
+			for(i = list.length - 1; i >= 0; i--){
+				node = this[list[i] + "Node"];
+				if(node){ return node.nextSibling; }
+			}
+			return this.domNode.firstChild;
+		},
+		
+		_setIcon: function(/*String*/icon, /*String*/type){
+			// tags:
+			//		private
+			if(!this._isOnLine){
+				// record the value to be able to reapply it (see the code in the startup method)
+				this["_pending_" + type] = icon;
+				return; 
+			} // icon may be invalid because inheritParams is not called yet
+			this._set(type, icon);
+			this[type + "Node"] = iconUtils.setIcon(icon, this[type + "Pos"],
+				this[type + "Node"], this[type + "Title"] || this.alt, this.domNode, this._findRef(type), "before");
+			if(this[type + "Node"]){
+				var cap = type.charAt(0).toUpperCase() + type.substring(1);
+				domClass.add(this[type + "Node"], "mblListItem" + cap);
+			}
+			var role = this[type + "Role"];
+			if(role){
+				this[type + "Node"].setAttribute("role", role);
+			}
+		},
+
+		_setDeleteIconAttr: function(/*String*/icon){
+			// tags:
+			//		private
+			this._setIcon(icon, "deleteIcon");
+		},
+
+		_setIconAttr: function(icon){
+			// tags:
+			//		private
+			this._setIcon(icon, "icon");
+		},
+
+		_setRightTextAttr: function(/*String*/text){
+			// tags:
+			//		private
+			if(!this._templated && !this.rightTextNode){
+				// When using a template, let the template create the element.
+				this.rightTextNode = domConstruct.create("div", {className:"mblListItemRightText"}, this.labelNode, "before");
+			}
+			this.rightText = text;
+			this.rightTextNode.innerHTML = this._cv ? this._cv(text) : text;
+		},
+
+		_setRightIconAttr: function(/*String*/icon){
+			// tags:
+			//		private
+			this._setIcon(icon, "rightIcon");
+		},
+
+		_setUncheckIconAttr: function(/*String*/icon){
+			// tags:
+			//		private
+			this._setIcon(icon, "uncheckIcon");
+		},
+
+		_setRightIcon2Attr: function(/*String*/icon){
+			// tags:
+			//		private
+			this._setIcon(icon, "rightIcon2");
+		},
+
+		_setCheckedAttr: function(/*Boolean*/checked){
+			// tags:
+			//		private
+			if(!this._isOnLine){
+				// record the value to be able to reapply it (see the code in the startup method)
+				this._pendingChecked = checked; 
+				return; 
+			} // icon may be invalid because inheritParams is not called yet
+			var parent = this.getParent();
+			if(parent && parent.select === "single" && checked){
+				array.forEach(parent.getChildren(), function(child){
+					child !== this && child.checked && child.set("checked", false) && domAttr.set(child.domNode, "aria-selected", "false");
+				}, this);
+			}
+			this._setRightIconAttr(this.checkClass || "mblDomButtonCheck");
+			this._setUncheckIconAttr(this.uncheckClass);
+
+			domClass.toggle(this.domNode, "mblListItemChecked", checked);
+			domClass.toggle(this.domNode, "mblListItemUnchecked", !checked);
+			domClass.toggle(this.domNode, "mblListItemHasUncheck", !!this.uncheckIconNode);
+			this.rightIconNode.style.position = (this.uncheckIconNode && !checked) ? "absolute" : "";
+
+			if(parent && this.checked !== checked){
+				parent.onCheckStateChanged(this, checked);
+			}
+			this._set("checked", checked);
+			domAttr.set(this.domNode, "aria-selected", checked ? "true" : "false");
+		},
+
+		_setBusyAttr: function(/*Boolean*/busy){
+			// tags:
+			//		private
+			var prog = this._prog;
+			if(busy){
+				if(!this._progNode){
+					this._progNode = domConstruct.create("div", {className:"mblListItemIcon"});
+					prog = this._prog = new ProgressIndicator({size:25, center:false, removeOnStop:false});
+					domClass.add(prog.domNode, this.progStyle);
+					this._progNode.appendChild(prog.domNode);
+				}
+				if(this.iconNode){
+					this.domNode.replaceChild(this._progNode, this.iconNode);
+				}else{
+					domConstruct.place(this._progNode, this._findRef("icon"), "before");
+				}
+				prog.start();
+			}else if(this._progNode){
+				if(this.iconNode){
+					this.domNode.replaceChild(this.iconNode, this._progNode);
+				}else{
+					this.domNode.removeChild(this._progNode);
+				}
+				prog.stop();
+			}
+			this._set("busy", busy);
+		},
+
+		_setSelectedAttr: function(/*Boolean*/selected){
+			// summary:
+			//		Makes this widget in the selected or unselected state.
+			// tags:
+			//		private
+			this.inherited(arguments);
+			domClass.toggle(this.domNode, this._selClass, selected);
+		},
+		
+		_setClickableAttr: function(/*Boolean*/clickable){
+			// tags:
+			//		private
+			this._set("clickable", clickable);
+			this._updateHandles();
+		},
+		
+		_setMoveToAttr: function(/*String*/moveTo){
+			// tags:
+			//		private
+			this._set("moveTo", moveTo);
+			this._updateHandles();
+		},
+		
+		_setHrefAttr: function(/*String*/href){
+			// tags:
+			//		private
+			this._set("href", href);
+			this._updateHandles();
+		},
+		
+		_setUrlAttr: function(/*String*/url){
+			// tags:
+			//		private
+			this._set("url", url);
+			this._updateHandles();
+		}
+	});
+	
+	ListItem.ChildWidgetProperties = {
+		// summary:
+		//		These properties can be specified for the children of a dojox/mobile/ListItem.
+
+		// layout: String
+		//		Specifies the position of the ListItem child ("left", "center" or "right").
+		layout: "",
+
+		// preventTouch: Boolean
+		//		Disables touch events on the ListItem child.
+		preventTouch: false
+	};
+	
+	// Since any widget can be specified as a ListItem child, mix ChildWidgetProperties
+	// into the base widget class.  (This is a hack, but it's effective.)
+	// This is for the benefit of the parser.   Remove for 2.0.  Also, hide from doc viewer.
+	lang.extend(WidgetBase, /*===== {} || =====*/ ListItem.ChildWidgetProperties);
+
+	return has("dojo-bidi") ? declare("dojox.mobile.ListItem", [ListItem, BidiListItem]) : ListItem;	
+});
+
+},
+'dojox/mobile/iconUtils':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/config",
+	"dojo/_base/connect",
+	"dojo/_base/event",
+	"dojo/_base/lang",
+	"dojo/_base/window",
+	"dojo/dom-class",
+	"dojo/dom-construct",
+	"dojo/dom-style",
+	"./sniff"
+], function(array, config, connect, event, lang, win, domClass, domConstruct, domStyle, has){
+
+	var dm = lang.getObject("dojox.mobile", true);
+
+	// module:
+	//		dojox/mobile/iconUtils
+
+	var IconUtils = function(){
+		// summary:
+		//		Utilities to create an icon (image, CSS sprite image, or DOM Button).
+
+		this.setupSpriteIcon = function(/*DomNode*/iconNode, /*String*/iconPos){
+			// summary:
+			//		Sets up CSS sprite for a foreground image.
+			if(iconNode && iconPos){
+				var arr = array.map(iconPos.split(/[ ,]/),function(item){return item-0});
+				var t = arr[0]; // top
+				var r = arr[1] + arr[2]; // right
+				var b = arr[0] + arr[3]; // bottom
+				var l = arr[1]; // left
+				domStyle.set(iconNode, {
+					position: "absolute",
+					clip: "rect("+t+"px "+r+"px "+b+"px "+l+"px)",
+					top: (iconNode.parentNode ? domStyle.get(iconNode, "top") : 0) - t + "px",
+					left: -l + "px"
+				});
+				domClass.add(iconNode, "mblSpriteIcon");
+			}
+		};
+
+		this.createDomButton = function(/*DomNode*/refNode, /*Object?*/style, /*DomNode?*/toNode){
+			// summary:
+			//		Creates a DOM button.
+			// description:
+			//		DOM button is a simple graphical object that consists of one or
+			//		more nested DIV elements with some CSS styling. It can be used
+			//		in place of an icon image on ListItem, IconItem, and so on.
+			//		The kind of DOM button to create is given as a class name of
+			//		refNode. The number of DIVs to create is searched from the style
+			//		sheets in the page. However, if the class name has a suffix that
+			//		starts with an underscore, like mblDomButtonGoldStar_5, then the
+			//		suffixed number is used instead. A class name for DOM button
+			//		must starts with 'mblDomButton'.
+			// refNode:
+			//		A node that has a DOM button class name.
+			// style:
+			//		A hash object to set styles to the node.
+			// toNode:
+			//		A root node to create a DOM button. If omitted, refNode is used.
+
+			if(!this._domButtons){
+				if(has("webkit")){
+					var findDomButtons = function(sheet, dic){
+						// summary:
+						//		Searches the style sheets for DOM buttons.
+						// description:
+						//		Returns a key-value pair object whose keys are DOM
+						//		button class names and values are the number of DOM
+						//		elements they need.
+						var i, j;
+						if(!sheet){
+							var _dic = {};
+							var ss = win.doc.styleSheets;
+							for (i = 0; i < ss.length; i++){
+								ss[i] && findDomButtons(ss[i], _dic);
+							}
+							return _dic;
+						}
+						var rules = sheet.cssRules || [];
+						for (i = 0; i < rules.length; i++){
+							var rule = rules[i];
+							if(rule.href && rule.styleSheet){
+								findDomButtons(rule.styleSheet, dic);
+							}else if(rule.selectorText){
+								var sels = rule.selectorText.split(/,/);
+								for (j = 0; j < sels.length; j++){
+									var sel = sels[j];
+									var n = sel.split(/>/).length - 1;
+									if(sel.match(/(mblDomButton\w+)/)){
+										var cls = RegExp.$1;
+										if(!dic[cls] || n > dic[cls]){
+											dic[cls] = n;
+										}
+									}
+								}
+							}
+						}
+						return dic;
+					}
+					this._domButtons = findDomButtons();
+				}else{
+					this._domButtons = {};
+				}
+			}
+
+			var s = refNode.className;
+			var node = toNode || refNode;
+			if(s.match(/(mblDomButton\w+)/) && s.indexOf("/") === -1){
+				var btnClass = RegExp.$1;
+				var nDiv = 4;
+				if(s.match(/(mblDomButton\w+_(\d+))/)){
+					nDiv = RegExp.$2 - 0;
+				}else if(this._domButtons[btnClass] !== undefined){
+					nDiv = this._domButtons[btnClass];
+				}
+				var props = null;
+				if(has("bb") && config["mblBBBoxShadowWorkaround"] !== false){
+					// Removes box-shadow because BlackBerry incorrectly renders it.
+					props = {style:"-webkit-box-shadow:none"};
+				}
+				for(var i = 0, p = node; i < nDiv; i++){
+					p = p.firstChild || domConstruct.create("div", props, p);
+				}
+				if(toNode){
+					setTimeout(function(){
+						domClass.remove(refNode, btnClass);
+					}, 0);
+					domClass.add(toNode, btnClass);
+				}
+			}else if(s.indexOf(".") !== -1){ // file name
+				domConstruct.create("img", {src:s}, node);
+			}else{
+				return null;
+			}
+			domClass.add(node, "mblDomButton");
+			!!style && domStyle.set(node, style);
+			return node;
+		};
+
+		this.createIcon = function(/*String*/icon, /*String?*/iconPos, /*DomNode?*/node, /*String?*/title, /*DomNode?*/parent, /*DomNode?*/refNode, /*String?*/pos){
+			// summary:
+			//		Creates or updates an icon node
+			// description:
+			//		If node exists, updates the existing node. Otherwise, creates a new one.
+			// icon:
+			//		Path for an image, or DOM button class name.
+			title = title || "";
+			if(icon && icon.indexOf("mblDomButton") === 0){
+				// DOM button
+				if(!node){
+					node = domConstruct.create("div", null, refNode || parent, pos);
+				}else{
+					if(node.className.match(/(mblDomButton\w+)/)){
+						domClass.remove(node, RegExp.$1);
+					}
+				}
+				node.title = title;
+				domClass.add(node, icon);
+				this.createDomButton(node);
+			}else if(icon && icon !== "none"){
+				// Image
+				if(!node || node.nodeName !== "IMG"){
+					node = domConstruct.create("img", {
+						alt: title
+					}, refNode || parent, pos);
+				}
+				node.src = (icon || "").replace("${theme}", dm.currentTheme);
+				this.setupSpriteIcon(node, iconPos);
+				if(iconPos && parent){
+					var arr = iconPos.split(/[ ,]/);
+					domStyle.set(parent, {
+						position: "relative",
+						width: arr[2] + "px",
+						height: arr[3] + "px"
+					});
+					domClass.add(parent, "mblSpriteIconParent");
+				}
+				connect.connect(node, "ondragstart", event, "stop");
+			}
+			return node;
+		};
+
+		this.iconWrapper = false;
+		this.setIcon = function(/*String*/icon, /*String*/iconPos, /*DomNode*/iconNode, /*String?*/alt, /*DomNode*/parent, /*DomNode?*/refNode, /*String?*/pos){
+			// summary:
+			//		A setter function to set an icon.
+			// description:
+			//		This function is intended to be used by icon setters (e.g. _setIconAttr)
+			// icon:
+			//		An icon path or a DOM button class name.
+			// iconPos:
+			//		The position of an aggregated icon. IconPos is comma separated
+			//		values like top,left,width,height (ex. "0,0,29,29").
+			// iconNode:
+			//		An icon node.
+			// alt:
+			//		An alt text for the icon image.
+			// parent:
+			//		Parent node of the icon.
+			// refNode:
+			//		A node reference to place the icon.
+			// pos:
+			//		The position of the icon relative to refNode.
+			if(!parent || !icon && !iconNode){ return null; }
+			if(icon && icon !== "none"){ // create or update an icon
+				if(!this.iconWrapper && icon.indexOf("mblDomButton") !== 0 && !iconPos){ // image
+					if(iconNode && iconNode.tagName === "DIV"){
+						domConstruct.destroy(iconNode);
+						iconNode = null;
+					}
+					iconNode = this.createIcon(icon, null, iconNode, alt, parent, refNode, pos);
+					domClass.add(iconNode, "mblImageIcon");
+				}else{ // sprite or DOM button
+					if(iconNode && iconNode.tagName === "IMG"){
+						domConstruct.destroy(iconNode);
+						iconNode = null;
+					}
+					iconNode && domConstruct.empty(iconNode);
+					if(!iconNode){
+						iconNode = domConstruct.create("div", null, refNode || parent, pos);
+					}
+					this.createIcon(icon, iconPos, null, null, iconNode);
+					if(alt){
+						iconNode.title = alt;
+					}
+				}
+				domClass.remove(parent, "mblNoIcon");
+				return iconNode;
+			}else{ // clear the icon
+				domConstruct.destroy(iconNode);
+				domClass.add(parent, "mblNoIcon");
+				return null;
+			}
+		};
+	};
+
+	// Return singleton.  (TODO: can we replace IconUtils class and singleton w/a simple hash of functions?)
+	return new IconUtils();
+});
+
+},
+'dojox/mobile/_ItemBase':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/_base/lang",
+	"dojo/_base/window",
+	"dojo/dom-class",
+	"dojo/touch",
+	"dijit/registry",
+	"dijit/_Contained",
+	"dijit/_Container",
+	"dijit/_WidgetBase",
+	"./TransitionEvent",
+	"./iconUtils",
+	"./sniff",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/_ItemBase"
+], function(array, declare, lang, win, domClass, touch, registry, Contained, Container, WidgetBase, TransitionEvent, iconUtils, has, BidiItemBase){
+
+	// module:
+	//		dojox/mobile/_ItemBase
+
+	var _ItemBase = declare(has("dojo-bidi") ? "dojox.mobile._NonBidiItemBase" : "dojox.mobile._ItemBase", [WidgetBase, Container, Contained], {
+		// summary:
+		//		A base class for item classes (e.g. ListItem, IconItem, etc.).
+		// description:
+		//		_ItemBase is a base class for widgets that have capability to
+		//		make a view transition when clicked.
+
+		// icon: String
+		//		An icon image to display. The value can be either a path for an
+		//		image file or a class name of a DOM button. If icon is not
+		//		specified, the iconBase parameter of the parent widget is used.
+		icon: "",
+
+		// iconPos: String
+		//		The position of an aggregated icon. IconPos is comma separated
+		//		values like top,left,width,height (ex. "0,0,29,29"). If iconPos
+		//		is not specified, the iconPos parameter of the parent widget is
+		//		used.
+		iconPos: "", // top,left,width,height (ex. "0,0,29,29")
+
+		// alt: String
+		//		An alternate text for the icon image.
+		alt: "",
+
+		// href: String
+		//		A URL of another web page to go to.
+		href: "",
+
+		// hrefTarget: String
+		//		A target that specifies where to open a page specified by
+		//		href. The value will be passed to the 2nd argument of
+		//		window.open().
+		hrefTarget: "",
+
+		// moveTo: String
+		//		The id of the transition destination view which resides in the
+		//		current page.
+		//
+		//		If the value has a hash sign ('#') before the id (e.g. #view1)
+		//		and the dojo/hash module is loaded by the user application, the
+		//		view transition updates the hash in the browser URL so that the
+		//		user can bookmark the destination view. In this case, the user
+		//		can also use the browser's back/forward button to navigate
+		//		through the views in the browser history.
+		//
+		//		If null, transitions to a blank view.
+		//		If '#', returns immediately without transition.
+		moveTo: "",
+
+		// scene: String
+		//		The name of a scene. Used from dojox/mobile/app.
+		scene: "",
+
+		// clickable: Boolean
+		//		If true, this item becomes clickable even if a transition
+		//		destination (moveTo, etc.) is not specified.
+		clickable: false,
+
+		// url: String
+		//		A URL of an html fragment page or JSON data that represents a
+		//		new view content. The view content is loaded with XHR and
+		//		inserted in the current page. Then a view transition occurs to
+		//		the newly created view. The view is cached so that subsequent
+		//		requests would not load the content again.
+		url: "",
+
+		// urlTarget: String
+		//		Node id under which a new view will be created according to the
+		//		url parameter. If not specified, The new view will be created as
+		//		a sibling of the current view.
+		urlTarget: "",
+
+		// back: Boolean
+		//		If true, history.back() is called when clicked.
+		back: false,
+
+		// transition: String
+		//		A type of animated transition effect. You can choose from the
+		//		standard transition types, "slide", "fade", "flip", or from the
+		//		extended transition types, "cover", "coverv", "dissolve",
+		//		"reveal", "revealv", "scaleIn", "scaleOut", "slidev",
+		//		"swirl", "zoomIn", "zoomOut", "cube", and "swap". If "none" is
+		//		specified, transition occurs immediately without animation.
+		transition: "",
+
+		// transitionDir: Number
+		//		The transition direction. If 1, transition forward. If -1,
+		//		transition backward. For example, the slide transition slides
+		//		the view from right to left when dir == 1, and from left to
+		//		right when dir == -1.
+		transitionDir: 1,
+
+		// transitionOptions: Object
+		//		A hash object that holds transition options.
+		transitionOptions: null,
+
+		// callback: Function|String
+		//		A callback function that is called when the transition has been
+		//		finished. A function reference, or name of a function in
+		//		context.
+		callback: null,
+
+		// label: String
+		//		A label of the item. If the label is not specified, innerHTML is
+		//		used as a label.
+		label: "",
+
+		// toggle: Boolean
+		//		If true, the item acts like a toggle button.
+		toggle: false,
+
+		// selected: Boolean
+		//		If true, the item is highlighted to indicate it is selected.
+		selected: false,
+
+		// tabIndex: String
+		//		Tabindex setting for the item so users can hit the tab key to
+		//		focus on it.
+		tabIndex: "0",
+		
+		// _setTabIndexAttr: [private] String
+		//		Sets tabIndex to domNode.
+		_setTabIndexAttr: "",
+
+		/* internal properties */	
+
+		// paramsToInherit: String
+		//		Comma separated parameters to inherit from the parent.
+		paramsToInherit: "transition,icon",
+
+		// _selStartMethod: String
+		//		Specifies how the item enters the selected state.
+		//
+		//		- "touch": Use touch events to enter the selected state.
+		//		- "none": Do not change the selected state.
+		_selStartMethod: "none", // touch or none
+
+		// _selEndMethod: String
+		//		Specifies how the item leaves the selected state.
+		//
+		//		- "touch": Use touch events to leave the selected state.
+		//		- "timer": Use setTimeout to leave the selected state.
+		//		- "none": Do not change the selected state.
+		_selEndMethod: "none", // touch, timer, or none
+
+		// _delayedSelection: Boolean
+		//		If true, selection is delayed 100ms and canceled if dragged in
+		//		order to avoid selection when flick operation is performed.
+		_delayedSelection: false,
+
+		// _duration: Number
+		//		Duration of selection, milliseconds.
+		_duration: 800,
+
+		// _handleClick: Boolean
+		//		If true, this widget listens to touch events.
+		_handleClick: true,
+
+		buildRendering: function(){
+			this.inherited(arguments);
+			this._isOnLine = this.inheritParams();
+		},
+
+		startup: function(){
+			if(this._started){ return; }
+			if(!this._isOnLine){
+				this.inheritParams();
+			}
+			this._updateHandles();
+			this.inherited(arguments);
+		},
+
+		inheritParams: function(){
+			// summary:
+			//		Copies from the parent the values of parameters specified 
+			//		by the property paramsToInherit.
+			var parent = this.getParent();
+			if(parent){
+				array.forEach(this.paramsToInherit.split(/,/), function(p){
+					if(p.match(/icon/i)){
+						var base = p + "Base", pos = p + "Pos";
+						if(this[p] && parent[base] &&
+							parent[base].charAt(parent[base].length - 1) === '/'){
+							this[p] = parent[base] + this[p];
+						}
+						if(!this[p]){ this[p] = parent[base]; }
+						if(!this[pos]){ this[pos] = parent[pos]; }
+					}
+					if(!this[p]){ this[p] = parent[p]; }
+				}, this);
+			}
+			return !!parent;
+		},
+
+		_updateHandles: function(){
+			// tags:
+			//		private
+			if(this._handleClick && this._selStartMethod === "touch"){
+				if(!this._onTouchStartHandle){
+					this._onTouchStartHandle = this.connect(this.domNode, touch.press, "_onTouchStart");
+				}
+			}else{
+				if(this._onTouchStartHandle){
+					this.disconnect(this._onTouchStartHandle);
+					this._onTouchStartHandle = null;
+				}
+			}
+		},
+		
+		getTransOpts: function(){
+			// summary:
+			//		Copies from the parent and returns the values of parameters  
+			//		specified by the property paramsToInherit.
+			var opts = this.transitionOptions || {};
+			array.forEach(["moveTo", "href", "hrefTarget", "url", "target",
+				"urlTarget", "scene", "transition", "transitionDir"], function(p){
+				opts[p] = opts[p] || this[p];
+			}, this);
+			return opts; // Object
+		},
+
+		userClickAction: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		User-defined click action.
+		},
+
+		defaultClickAction: function(/*Event*/e){
+			// summary:
+			//		The default action of this item.
+			this.handleSelection(e);
+			if(this.userClickAction(e) === false){ return; } // user's click action
+			this.makeTransition(e);
+		},
+
+		handleSelection: function(/*Event*/e){
+			// summary:
+			//		Handles this items selection state.
+
+			// Before transitioning, we want the visual effect of selecting the item.
+			// To ensure this effect happens even if _delayedSelection is true:
+			if(this._delayedSelection){
+				this.set("selected", true);
+			} // the item will be deselected after transition.
+
+			if(this._onTouchEndHandle){
+				this.disconnect(this._onTouchEndHandle);
+				this._onTouchEndHandle = null;
+			}
+
+			var p = this.getParent();
+			if(this.toggle){
+				this.set("selected", !this._currentSel);
+			}else if(p && p.selectOne){
+				this.set("selected", true);
+			}else{
+				if(this._selEndMethod === "touch"){
+					this.set("selected", false);
+				}else if(this._selEndMethod === "timer"){
+					this.defer(function(){
+						this.set("selected", false);
+					}, this._duration);
+				}
+			}
+		},
+
+		makeTransition: function(/*Event*/e){
+			// summary:
+			//		Makes a transition.
+			if(this.back && history){
+				history.back();	
+				return;
+			}	
+			if (this.href && this.hrefTarget && this.hrefTarget != "_self") {
+				win.global.open(this.href, this.hrefTarget || "_blank");
+				this._onNewWindowOpened(e);
+				return;
+			}
+			var opts = this.getTransOpts();
+			var doTransition = 
+				!!(opts.moveTo || opts.href || opts.url || opts.target || opts.scene);
+			if(this._prepareForTransition(e, doTransition ? opts : null) === false){ return; }
+			if(doTransition){
+				this.setTransitionPos(e);
+				new TransitionEvent(this.domNode, opts, e).dispatch();
+			}
+		},
+
+		_onNewWindowOpened: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		Subclasses may want to implement it.
+		},
+
+		_prepareForTransition: function(/*Event*/e, /*Object*/transOpts){
+			// summary:
+			//		Subclasses may want to implement it.
+		},
+
+		_onTouchStart: function(e){
+			// tags:
+			//		private
+			if(this.getParent().isEditing || this.onTouchStart(e) === false){ return; } // user's touchStart action
+			if(!this._onTouchEndHandle && this._selStartMethod === "touch"){
+				// Connect to the entire window. Otherwise, fail to receive
+				// events if operation is performed outside this widget.
+				// Expose both connect handlers in case the user has interest.
+				this._onTouchMoveHandle = this.connect(win.body(), touch.move, "_onTouchMove");
+				this._onTouchEndHandle = this.connect(win.body(), touch.release, "_onTouchEnd");
+			}
+			this.touchStartX = e.touches ? e.touches[0].pageX : e.clientX;
+			this.touchStartY = e.touches ? e.touches[0].pageY : e.clientY;
+			this._currentSel = this.selected;
+
+			if(this._delayedSelection){
+				// so as not to make selection when the user flicks on ScrollableView
+				this._selTimer = this.defer(function(){
+					this.set("selected", true);
+				}, 100);
+			}else{
+				this.set("selected", true);
+			}
+		},
+
+		onTouchStart: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		User-defined function to handle touchStart events.
+			// tags:
+			//		callback
+		},
+
+		_onTouchMove: function(e){
+			// tags:
+			//		private
+			var x = e.touches ? e.touches[0].pageX : e.clientX;
+			var y = e.touches ? e.touches[0].pageY : e.clientY;
+			if(Math.abs(x - this.touchStartX) >= 4 ||
+			   Math.abs(y - this.touchStartY) >= 4){ // dojox/mobile/scrollable.threshold
+				this.cancel();
+				var p = this.getParent();
+				if(p && p.selectOne){
+					this._prevSel && this._prevSel.set("selected", true);
+				}else{
+					this.set("selected", false);
+				}
+			}
+		},
+
+		_disconnect: function(){
+			// tags:
+			//		private
+			this.disconnect(this._onTouchMoveHandle);
+			this.disconnect(this._onTouchEndHandle);
+			this._onTouchMoveHandle = this._onTouchEndHandle = null;
+		},
+
+		cancel: function(){
+			// summary:
+			//		Cancels an ongoing selection (if any).
+			if(this._selTimer){
+				this._selTimer.remove(); 
+				this._selTimer = null;
+			}
+			this._disconnect();
+		},
+
+		_onTouchEnd: function(e){
+			// tags:
+			//		private
+			if(!this._selTimer && this._delayedSelection){ return; }
+			this.cancel();
+			this._onClick(e);
+		},
+
+		setTransitionPos: function(e){
+			// summary:
+			//		Stores the clicked position for later use.
+			// description:
+			//		Some of the transition animations (e.g. ScaleIn) need the
+			//		clicked position.
+			var w = this;
+			while(true){
+				w = w.getParent();
+				if(!w || domClass.contains(w.domNode, "mblView")){ break; }
+			}
+			if(w){
+				w.clickedPosX = e.clientX;
+				w.clickedPosY = e.clientY;
+			}
+		},
+
+		transitionTo: function(/*String|Object*/moveTo, /*String*/href, /*String*/url, /*String*/scene){
+			// summary:
+			//		Performs a view transition.
+			// description:
+			//		Given a transition destination, this method performs a view
+			//		transition. This method is typically called when this item
+			//		is clicked.
+			var opts = (moveTo && typeof(moveTo) === "object") ? moveTo :
+				{moveTo: moveTo, href: href, url: url, scene: scene,
+				 transition: this.transition, transitionDir: this.transitionDir};
+			new TransitionEvent(this.domNode, opts).dispatch();
+		},
+
+		_setIconAttr: function(icon){
+			// tags:
+			//		private
+			if(!this._isOnLine){
+				// record the value to be able to reapply it (see the code in the startup method)
+				this._pendingIcon = icon;  
+				return; 
+			} // icon may be invalid because inheritParams is not called yet
+			this._set("icon", icon);
+			this.iconNode = iconUtils.setIcon(icon, this.iconPos, this.iconNode, this.alt, this.iconParentNode, this.refNode, this.position);
+		},
+
+		_setLabelAttr: function(/*String*/text){
+			// tags:
+			//		private
+			this._set("label", text);
+			this.labelNode.innerHTML = this._cv ? this._cv(text) : text;
+		},
+
+		_setSelectedAttr: function(/*Boolean*/selected){
+			// summary:
+			//		Makes this widget in the selected or unselected state.
+			// description:
+			//		Subclass should override.
+			// tags:
+			//		private
+			if(selected){
+				var p = this.getParent();
+				if(p && p.selectOne){
+					// deselect the currently selected item
+					var arr = array.filter(p.getChildren(), function(w){
+						return w.selected;
+					});
+					array.forEach(arr, function(c){
+						this._prevSel = c;
+						c.set("selected", false);
+					}, this);
+				}
+			}
+			this._set("selected", selected);
+		}
+	});
+	return has("dojo-bidi") ? declare("dojox.mobile._ItemBase", [_ItemBase, BidiItemBase]) : _ItemBase;
+});
+
+},
+'dijit/_Contained':function(){
+define([
+	"dojo/_base/declare", // declare
+	"./registry"	// registry.getEnclosingWidget(), registry.byNode()
+], function(declare, registry){
+
+	// module:
+	//		dijit/_Contained
+
+	return declare("dijit._Contained", null, {
+		// summary:
+		//		Mixin for widgets that are children of a container widget
+		// example:
+		//	|	// make a basic custom widget that knows about its parents
+		//	|	declare("my.customClass",[dijit._WidgetBase, dijit._Contained],{});
+
+		_getSibling: function(/*String*/ which){
+			// summary:
+			//		Returns next or previous sibling
+			// which:
+			//		Either "next" or "previous"
+			// tags:
+			//		private
+			var node = this.domNode;
+			do{
+				node = node[which+"Sibling"];
+			}while(node && node.nodeType != 1);
+			return node && registry.byNode(node);	// dijit/_WidgetBase
+		},
+
+		getPreviousSibling: function(){
+			// summary:
+			//		Returns null if this is the first child of the parent,
+			//		otherwise returns the next element sibling to the "left".
+
+			return this._getSibling("previous"); // dijit/_WidgetBase
+		},
+
+		getNextSibling: function(){
+			// summary:
+			//		Returns null if this is the last child of the parent,
+			//		otherwise returns the next element sibling to the "right".
+
+			return this._getSibling("next"); // dijit/_WidgetBase
+		},
+
+		getIndexInParent: function(){
+			// summary:
+			//		Returns the index of this widget within its container parent.
+			//		It returns -1 if the parent does not exist, or if the parent
+			//		is not a dijit/_Container
+
+			var p = this.getParent();
+			if(!p || !p.getIndexOfChild){
+				return -1; // int
+			}
+			return p.getIndexOfChild(this); // int
+		}
+	});
+});
+
+},
+'dijit/_Container':function(){
+define([
+	"dojo/_base/array", // array.forEach array.indexOf
+	"dojo/_base/declare", // declare
+	"dojo/dom-construct", // domConstruct.place
+	"dojo/_base/kernel" // kernel.deprecated
+], function(array, declare, domConstruct, kernel){
+
+	// module:
+	//		dijit/_Container
+
+	return declare("dijit._Container", null, {
+		// summary:
+		//		Mixin for widgets that contain HTML and/or a set of widget children.
+
+		buildRendering: function(){
+			this.inherited(arguments);
+			if(!this.containerNode){
+				// All widgets with descendants must set containerNode.
+				// NB: this code doesn't quite work right because for TabContainer it runs before
+				// _TemplatedMixin::buildRendering(), and thus
+				// sets this.containerNode to this.domNode, later to be overridden by the assignment in the template.
+				this.containerNode = this.domNode;
+			}
+		},
+
+		addChild: function(/*dijit/_WidgetBase*/ widget, /*int?*/ insertIndex){
+			// summary:
+			//		Makes the given widget a child of this widget.
+			// description:
+			//		Inserts specified child widget's dom node as a child of this widget's
+			//		container node, and possibly does other processing (such as layout).
+
+			// I want to just call domConstruct.place(widget.domNode, this.containerNode, insertIndex), but the counting
+			// is thrown off by text nodes and comment nodes that show up when constructed by markup.
+			// In the future consider stripping those nodes on construction, either in the parser or this widget code.
+			var refNode = this.containerNode;
+			if(insertIndex > 0){
+				// Old-school way to get nth child; dojo.query would be easier but _Container was weened from dojo.query
+				// in #10087 to minimize download size.   Not sure if that's still and issue with new smaller dojo/query.
+				refNode = refNode.firstChild;
+				while(insertIndex > 0){
+					if(refNode.nodeType == 1){ insertIndex--; }
+					refNode = refNode.nextSibling;
+				}
+				if(refNode){
+					insertIndex = "before";
+				}else{
+					// to support addChild(child, n-1) where there are n children (should add child at end)
+					refNode = this.containerNode;
+					insertIndex = "last";
+				}
+			}
+
+			domConstruct.place(widget.domNode, refNode, insertIndex);
+
+			// If I've been started but the child widget hasn't been started,
+			// start it now.  Make sure to do this after widget has been
+			// inserted into the DOM tree, so it can see that it's being controlled by me,
+			// so it doesn't try to size itself.
+			if(this._started && !widget._started){
+				widget.startup();
+			}
+		},
+
+		removeChild: function(/*Widget|int*/ widget){
+			// summary:
+			//		Removes the passed widget instance from this widget but does
+			//		not destroy it.  You can also pass in an integer indicating
+			//		the index within the container to remove (ie, removeChild(5) removes the sixth widget).
+
+			if(typeof widget == "number"){
+				widget = this.getChildren()[widget];
+			}
+
+			if(widget){
+				var node = widget.domNode;
+				if(node && node.parentNode){
+					node.parentNode.removeChild(node); // detach but don't destroy
+				}
+			}
+		},
+
+		hasChildren: function(){
+			// summary:
+			//		Returns true if widget has child widgets, i.e. if this.containerNode contains widgets.
+			return this.getChildren().length > 0;	// Boolean
+		},
+
+		_getSiblingOfChild: function(/*dijit/_WidgetBase*/ child, /*int*/ dir){
+			// summary:
+			//		Get the next or previous widget sibling of child
+			// dir:
+			//		if 1, get the next sibling
+			//		if -1, get the previous sibling
+			// tags:
+			//		private
+			kernel.deprecated(this.declaredClass+"::_getSiblingOfChild() is deprecated. Use _KeyNavMixin::_getNext() instead.", "", "2.0");
+			var children = this.getChildren(),
+				idx = array.indexOf(children, child);	// int
+			return children[idx + dir];
+		},
+
+		getIndexOfChild: function(/*dijit/_WidgetBase*/ child){
+			// summary:
+			//		Gets the index of the child in this container or -1 if not found
+			return array.indexOf(this.getChildren(), child);	// int
+		}
+	});
+});
+
+},
+'dojox/mobile/TransitionEvent':function(){
+define(["dojo/_base/declare", "dojo/on"], function(declare, on){
+
+	return declare("dojox.mobile.TransitionEvent", null, {
+		// summary:
+		//		A class used to trigger view transitions.
+		
+		constructor: function(/*DomNode*/target, /*Object*/transitionOptions, /*Event?*/triggerEvent){
+			// summary:
+			//		Creates a transition event.
+			// target:
+			//		The DOM node that initiates the transition (for example a ListItem).
+			// transitionOptions:
+			//		Contains the transition options.
+			// triggerEvent:
+			//		The event that triggered the transition (for example a touch event on a ListItem).
+			this.transitionOptions = transitionOptions;
+			this.target = target;
+			this.triggerEvent = triggerEvent||null;
+		},
+
+		dispatch: function(){
+			// summary:
+			//		Dispatches this transition event. Emits a "startTransition" event on the target.
+			var opts = {bubbles:true, cancelable:true, detail: this.transitionOptions, triggerEvent: this.triggerEvent};	
+			var evt = on.emit(this.target,"startTransition", opts);
+		}
+	});
+});
+
+},
+'dojox/mobile/ProgressIndicator':function(){
+define([
+	"dojo/_base/config",
+	"dojo/_base/declare",
+	"dojo/_base/lang",
+	"dojo/dom-class",
+	"dojo/dom-construct",
+	"dojo/dom-geometry",
+	"dojo/dom-style",
+	"dojo/has",
+	"dijit/_Contained",
+	"dijit/_WidgetBase",
+	"./_css3"
+], function(config, declare, lang, domClass, domConstruct, domGeometry, domStyle, has, Contained, WidgetBase, css3){
+
+	// module:
+	//		dojox/mobile/ProgressIndicator
+
+	var cls = declare("dojox.mobile.ProgressIndicator", [WidgetBase, Contained], {
+		// summary:
+		//		A progress indication widget.
+		// description:
+		//		ProgressIndicator is a round spinning graphical representation
+		//		that indicates the current task is ongoing.
+
+		// interval: Number
+		//		The time interval in milliseconds for updating the spinning
+		//		indicator.
+		interval: 100,
+
+		// size: [const] Number
+		//		The size of the indicator in pixels.
+		//		Note that changing the value of the property after the widget
+		//		creation has no effect.
+		size: 40,
+
+		// removeOnStop: Boolean
+		//		If true, this widget is removed from the parent node
+		//		when stop() is called.
+		removeOnStop: true,
+
+		// startSpinning: Boolean
+		//		If true, calls start() to run the indicator at startup.
+		startSpinning: false,
+
+		// center: Boolean
+		//		If true, the indicator is displayed as center aligned.
+		center: true,
+
+		// colors: String[]
+		//		An array of indicator colors. 12 colors have to be given.
+		//		If colors are not specified, CSS styles
+		//		(mblProg0Color - mblProg11Color) are used.
+		colors: null,
+
+		/* internal properties */
+		
+		// baseClass: String
+		//		The name of the CSS class of this widget.	
+		baseClass: "mblProgressIndicator",
+
+		constructor: function(){
+			// summary:
+			//		Creates a new instance of the class.
+			this.colors = [];
+			this._bars = [];
+		},
+
+		buildRendering: function(){
+			this.inherited(arguments);
+			if(this.center){
+				domClass.add(this.domNode, "mblProgressIndicatorCenter");
+			}
+			this.containerNode = domConstruct.create("div", {className:"mblProgContainer"}, this.domNode);
+			this.spinnerNode = domConstruct.create("div", null, this.containerNode);
+			for(var i = 0; i < 12; i++){
+				var div = domConstruct.create("div", {className:"mblProg mblProg"+i}, this.spinnerNode);
+				this._bars.push(div);
+			}
+			this.scale(this.size);
+			if(this.startSpinning){
+				this.start();
+			}
+		},
+
+		scale: function(/*Number*/size){
+			// summary:
+			//		Changes the size of the indicator.
+			// size:
+			//		The size of the indicator in pixels.
+			var scale = size / 40;
+			domStyle.set(this.containerNode, css3.add({}, {
+				transform: "scale(" + scale + ")",
+				transformOrigin: "0 0"
+			}));
+			domGeometry.setMarginBox(this.domNode, {w:size, h:size});
+			domGeometry.setMarginBox(this.containerNode, {w:size / scale, h:size / scale});
+		},
+
+		start: function(){
+			// summary:
+			//		Starts the spinning of the ProgressIndicator.
+			if(this.imageNode){
+				var img = this.imageNode;
+				var l = Math.round((this.containerNode.offsetWidth - img.offsetWidth) / 2);
+				var t = Math.round((this.containerNode.offsetHeight - img.offsetHeight) / 2);
+				img.style.margin = t+"px "+l+"px";
+				return;
+			}
+			var cntr = 0;
+			var _this = this;
+			var n = 12;
+			this.timer = setInterval(function(){
+				cntr--;
+				cntr = cntr < 0 ? n - 1 : cntr;
+				var c = _this.colors;
+				for(var i = 0; i < n; i++){
+					var idx = (cntr + i) % n;
+					if(c[idx]){
+						_this._bars[i].style.backgroundColor = c[idx];
+					}else{
+						domClass.replace(_this._bars[i],
+										 "mblProg" + idx + "Color",
+										 "mblProg" + (idx === n - 1 ? 0 : idx + 1) + "Color");
+					}
+				}
+			}, this.interval);
+		},
+
+		stop: function(){
+			// summary:
+			//		Stops the spinning of the ProgressIndicator.
+			if(this.timer){
+				clearInterval(this.timer);
+			}
+			this.timer = null;
+			if(this.removeOnStop && this.domNode && this.domNode.parentNode){
+				this.domNode.parentNode.removeChild(this.domNode);
+			}
+		},
+
+		setImage: function(/*String*/file){
+			// summary:
+			//		Sets an indicator icon image file (typically animated GIF).
+			//		If null is specified, restores the default spinner.
+			if(file){
+				this.imageNode = domConstruct.create("img", {src:file}, this.containerNode);
+				this.spinnerNode.style.display = "none";
+			}else{
+				if(this.imageNode){
+					this.containerNode.removeChild(this.imageNode);
+					this.imageNode = null;
+				}
+				this.spinnerNode.style.display = "";
+			}
+		},
+
+		destroy: function(){
+			this.inherited(arguments);
+			if(this === cls._instance){
+				cls._instance = null;
+			}
+		}
+	});
+
+	cls._instance = null;
+	cls.getInstance = function(props){
+		if(!cls._instance){
+			cls._instance = new cls(props);
+		}
+		return cls._instance;
+	};
+
+	return cls;
+});
+
+},
+'dojox/mobile/_css3':function(){
+define([
+	"dojo/_base/window",
+	"dojo/_base/array",
+	"dojo/has"
+], function(win, arr, has){
+	
+	// caches for capitalized names and hypen names
+	var cnames = [], hnames = [];
+	
+	// element style used for feature testing
+	var style = win.doc.createElement("div").style;
+	
+	// We just test webkit prefix for now since our themes only have standard and webkit
+	// (see dojox/mobile/themes/common/css3.less)
+	// More prefixes can be added if/when we add them to css3.less.
+	var prefixes = ["webkit"];
+	
+	// Does the browser support CSS3 animations?
+	has.add("css3-animations", function(global, document, element){
+		var style = element.style;
+		return (style["animation"] !== undefined && style["transition"] !== undefined) ||
+			arr.some(prefixes, function(p){
+				return style[p+"Animation"] !== undefined && style[p+"Transition"] !== undefined;
+			});
+	});
+	
+	var css3 = {
+		// summary:
+		//		This module provide some cross-browser support for CSS3 properties.
+	
+		name: function(/*String*/p, /*Boolean?*/hyphen){
+			// summary:
+			//		Returns the name of a CSS3 property with the correct prefix depending on the browser.
+			// p:
+			//		The (non-prefixed) property name. The property name is assumed to be consistent with
+			//		the hyphen argument, for example "transition-property" if hyphen is true, or "transitionProperty"
+			//		if hyphen is false. If the browser supports the non-prefixed property, the property name will be
+			//		returned unchanged.
+			// hyphen:
+			//		Optional, true if hyphen notation should be used (for example "transition-property" or "-webkit-transition-property"),
+			//		false for camel-case notation (for example "transitionProperty" or "webkitTransitionProperty").
+			
+			var n = (hyphen?hnames:cnames)[p];
+			if(!n){
+				
+				if(/End|Start/.test(p)){
+					// event names: no good way to feature-detect, so we
+					// assume they have the same prefix as the corresponding style property
+					var idx = p.length - (p.match(/End/) ? 3 : 5);
+					var s = p.substr(0, idx);
+					var pp = this.name(s);
+					if(pp == s){
+						// no prefix, standard event names are all lowercase
+						n = p.toLowerCase();
+					}else{
+						// prefix, e.g. webkitTransitionEnd (camel case)
+						n = pp + p.substr(idx);
+					}
+				}else if(p == "keyframes"){
+					// special case for keyframes, we also rely on consistency between 'animation' and 'keyframes'
+					var pk = this.name("animation", hyphen);
+					if(pk == "animation"){
+						n = p;
+					}else if(hyphen){
+						n = pk.replace(/animation/, "keyframes");
+					}else{
+						n = pk.replace(/Animation/, "Keyframes");
+					}
+				}else{
+					// convert name to camel-case for feature test
+					var cn = hyphen ? p.replace(/-(.)/g, function(match, p1){
+    					return p1.toUpperCase();
+					}) : p;
+					
+					if(style[cn] !== undefined){
+						// standard non-prefixed property is supported
+						n = p;
+					}else{
+						// try prefixed versions
+						cn = cn.charAt(0).toUpperCase() + cn.slice(1);
+						arr.some(prefixes, function(prefix){
+							if(style[prefix+cn] !== undefined){
+								if(hyphen){
+									n = "-" + prefix + "-" + p;
+								}else{
+									n = prefix + cn;
+								}
+							}
+						});
+					}
+				}
+				
+				if(!n){
+					// The property is not supported, just return it unchanged, it will be ignored.
+					n = p;
+				}
+
+				(hyphen?hnames:cnames)[p] = n;
+			}
+			return n;
+		},
+		
+		add: function(/*Object*/styles, /*Object*/css3Styles){
+			// summary:
+			//		Prefixes all property names in "css3Styles" and adds the prefixed properties in "styles".
+			//		Used as a convenience when an object is passed to domStyle.set to set multiple styles.
+			// example:
+			//		domStyle.set(bar, css3.add({
+			//			opacity: 0.6,
+			//			position: "absolute",
+			//			backgroundColor: "#606060"
+			//		}, {
+			//			borderRadius: "2px",
+			//			transformOrigin: "0 0"
+			//		}));
+			// returns:
+			//		The "styles" argument where the CSS3 styles have been added.
+			
+			for(var p in css3Styles){
+				if(css3Styles.hasOwnProperty(p)){
+					styles[css3.name(p)] = css3Styles[p];
+				}
+			}
+			return styles;
+		}
+	}
+	
+	return css3;
+});
+
+},
+'dojo/NodeList-manipulate':function(){
+define(["./query", "./_base/lang", "./_base/array", "./dom-construct", "./NodeList-dom"], function(dquery, lang, array, construct){
+	// module:
+	//		dojo/NodeList-manipulate
+
+	/*=====
+	return function(){
+		// summary:
+		//		Adds chainable methods to dojo.query() / NodeList instances for manipulating HTML
+		//		and DOM nodes and their properties.
+	};
+	=====*/
+
+	var NodeList = dquery.NodeList;
+
+	//TODO: add a way to parse for widgets in the injected markup?
+
+	function getText(/*DOMNode*/node){
+		// summary:
+		//		recursion method for text() to use. Gets text value for a node.
+		// description:
+		//		Juse uses nodedValue so things like <br/> tags do not end up in
+		//		the text as any sort of line return.
+		var text = "", ch = node.childNodes;
+		for(var i = 0, n; n = ch[i]; i++){
+			//Skip comments.
+			if(n.nodeType != 8){
+				if(n.nodeType == 1){
+					text += getText(n);
+				}else{
+					text += n.nodeValue;
+				}
+			}
+		}
+		return text;
+	}
+
+	function getWrapInsertion(/*DOMNode*/node){
+		// summary:
+		//		finds the innermost element to use for wrap insertion.
+
+		//Make it easy, assume single nesting, no siblings.
+		while(node.childNodes[0] && node.childNodes[0].nodeType == 1){
+			node = node.childNodes[0];
+		}
+		return node; //DOMNode
+	}
+
+	function makeWrapNode(/*DOMNode||String*/html, /*DOMNode*/refNode){
+		// summary:
+		//		convert HTML into nodes if it is not already a node.
+		if(typeof html == "string"){
+			html = construct.toDom(html, (refNode && refNode.ownerDocument));
+			if(html.nodeType == 11){
+				//DocumentFragment cannot handle cloneNode, so choose first child.
+				html = html.childNodes[0];
+			}
+		}else if(html.nodeType == 1 && html.parentNode){
+			//This element is already in the DOM clone it, but not its children.
+			html = html.cloneNode(false);
+		}
+		return html; /*DOMNode*/
+	}
+
+	lang.extend(NodeList, {
+		_placeMultiple: function(/*String||Node||NodeList*/query, /*String*/position){
+			// summary:
+			//		private method for inserting queried nodes into all nodes in this NodeList
+			//		at different positions. Differs from NodeList.place because it will clone
+			//		the nodes in this NodeList if the query matches more than one element.
+			var nl2 = typeof query == "string" || query.nodeType ? dquery(query) : query;
+			var toAdd = [];
+			for(var i = 0; i < nl2.length; i++){
+				//Go backwards in DOM to make dom insertions easier via insertBefore
+				var refNode = nl2[i];
+				var length = this.length;
+				for(var j = length - 1, item; item = this[j]; j--){
+					if(i > 0){
+						//Need to clone the item. This also means
+						//it needs to be added to the current NodeList
+						//so it can also be the target of other chaining operations.
+						item = this._cloneNode(item);
+						toAdd.unshift(item);
+					}
+					if(j == length - 1){
+						construct.place(item, refNode, position);
+					}else{
+						refNode.parentNode.insertBefore(item, refNode);
+					}
+					refNode = item;
+				}
+			}
+
+			if(toAdd.length){
+				//Add the toAdd items to the current NodeList. Build up list of args
+				//to pass to splice.
+				toAdd.unshift(0);
+				toAdd.unshift(this.length - 1);
+				Array.prototype.splice.apply(this, toAdd);
+			}
+
+			return this; // dojo/NodeList
+		},
+
+		innerHTML: function(/*String|DOMNode|NodeList?*/ value){
+			// summary:
+			//		allows setting the innerHTML of each node in the NodeList,
+			//		if there is a value passed in, otherwise, reads the innerHTML value of the first node.
+			// description:
+			//		This method is simpler than the dojo/NodeList.html() method provided by
+			//		`dojo/NodeList-html`. This method just does proper innerHTML insertion of HTML fragments,
+			//		and it allows for the innerHTML to be read for the first node in the node list.
+			//		Since dojo/NodeList-html already took the "html" name, this method is called
+			//		"innerHTML". However, if dojo/NodeList-html has not been loaded yet, this
+			//		module will define an "html" method that can be used instead. Be careful if you
+			//		are working in an environment where it is possible that dojo/NodeList-html could
+			//		have been loaded, since its definition of "html" will take precedence.
+			//		The nodes represented by the value argument will be cloned if more than one
+			//		node is in this NodeList. The nodes in this NodeList are returned in the "set"
+			//		usage of this method, not the HTML that was inserted.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts `<p>Hello World</p>` into both divs:
+			//	|	dojo.query("div").innerHTML("<p>Hello World</p>");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns `<p>Hello Mars</p>`:
+			//	|	var message = dojo.query("div").innerHTML();
+			if(arguments.length){
+				return this.addContent(value, "only"); // dojo/NodeList
+			}else{
+				return this[0].innerHTML; //String
+			}
+		},
+
+		/*=====
+		html: function(value){
+			// summary:
+			//		see the information for "innerHTML". "html" is an alias for "innerHTML", but is
+			//		only defined if dojo/NodeList-html has not been loaded.
+			// description:
+			//		An alias for the "innerHTML" method, but only defined if there is not an existing
+			//		"html" method on dojo/NodeList. Be careful if you are working in an environment
+			//		where it is possible that dojo/NodeList-html could have been loaded, since its
+			//		definition of "html" will take precedence. If you are not sure if dojo/NodeList-html
+			//		could be loaded, use the "innerHTML" method.
+			// value: String|DOMNode|NodeList?
+			//		The HTML fragment to use as innerHTML. If value is not passed, then the innerHTML
+			//		of the first element in this NodeList is returned.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			return; // dojo/NodeList|String
+		},
+		=====*/
+
+		text: function(/*String*/value){
+			// summary:
+			//		allows setting the text value of each node in the NodeList,
+			//		if there is a value passed in, otherwise, returns the text value for all the
+			//		nodes in the NodeList in one string.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts "Hello World" into both divs:
+			//	|	dojo.query("div").text("Hello World");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars <span>today</span></p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns "Hello Mars today":
+			//	|	var message = dojo.query("div").text();
+			// returns:
+			//		if no value is passed, the result is String, the text value of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			if(arguments.length){
+				for(var i = 0, node; node = this[i]; i++){
+					if(node.nodeType == 1){
+						construct.empty(node);
+						node.appendChild(node.ownerDocument.createTextNode(value));
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				var result = "";
+				for(i = 0; node = this[i]; i++){
+					result += getText(node);
+				}
+				return result; //String
+			}
+		},
+
+		val: function(/*String||Array*/value){
+			// summary:
+			//		If a value is passed, allows seting the value property of form elements in this
+			//		NodeList, or properly selecting/checking the right value for radio/checkbox/select
+			//		elements. If no value is passed, the value of the first node in this NodeList
+			//		is returned.
+			// returns:
+			//		if no value is passed, the result is String or an Array, for the value of the
+			//		first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<input type="text" value="foo">
+			//	|	<select multiple>
+			//	|		<option value="red" selected>Red</option>
+			//	|		<option value="blue">Blue</option>
+			//	|		<option value="yellow" selected>Yellow</option>
+			//	|	</select>
+			//		This code gets and sets the values for the form fields above:
+			//	|	dojo.query('[type="text"]').val(); //gets value foo
+			//	|	dojo.query('[type="text"]').val("bar"); //sets the input's value to "bar"
+			// 	|	dojo.query("select").val() //gets array value ["red", "yellow"]
+			// 	|	dojo.query("select").val(["blue", "yellow"]) //Sets the blue and yellow options to selected.
+
+			//Special work for input elements.
+			if(arguments.length){
+				var isArray = lang.isArray(value);
+				for(var index = 0, node; node = this[index]; index++){
+					var name = node.nodeName.toUpperCase();
+					var type = node.type;
+					var newValue = isArray ? value[index] : value;
+
+					if(name == "SELECT"){
+						var opts = node.options;
+						for(var i = 0; i < opts.length; i++){
+							var opt = opts[i];
+							if(node.multiple){
+								opt.selected = (array.indexOf(value, opt.value) != -1);
+							}else{
+								opt.selected = (opt.value == newValue);
+							}
+						}
+					}else if(type == "checkbox" || type == "radio"){
+						node.checked = (node.value == newValue);
+					}else{
+						node.value = newValue;
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				//node already declared above.
+				node = this[0];
+				if(!node || node.nodeType != 1){
+					return undefined;
+				}
+				value = node.value || "";
+				if(node.nodeName.toUpperCase() == "SELECT" && node.multiple){
+					//A multivalued selectbox. Do the pain.
+					value = [];
+					//opts declared above in if block.
+					opts = node.options;
+					//i declared above in if block;
+					for(i = 0; i < opts.length; i++){
+						//opt declared above in if block
+						opt = opts[i];
+						if(opt.selected){
+							value.push(opt.value);
+						}
+					}
+					if(!value.length){
+						value = null;
+					}
+				}
+				return value; //String||Array
+			}
+		},
+
+		append: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		appends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").append("<span>append</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p><span>append</span></div>
+			//	|	<div id="bar"><p>Hello World</p><span>append</span></div>
+			return this.addContent(content, "last"); // dojo/NodeList
+		},
+
+		appendTo: function(/*String*/query){
+			// summary:
+			//		appends nodes in this NodeList to the nodes matched by
+			//		the query passed to appendTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>append</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").appendTo("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars<span>append</span></p>
+			//	|	<p>Hello World<span>append</span></p>
+			return this._placeMultiple(query, "last"); // dojo/NodeList
+		},
+
+		prepend: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		prepends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").prepend("<span>prepend</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><span>prepend</span><p>Hello Mars</p></div>
+			//	|	<div id="bar"><span>prepend</span><p>Hello World</p></div>
+			return this.addContent(content, "first"); // dojo/NodeList
+		},
+
+		prependTo: function(/*String*/query){
+			// summary:
+			//		prepends nodes in this NodeList to the nodes matched by
+			//		the query passed to prependTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>prepend</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").prependTo("p");
+			//		Results in this DOM structure:
+			//	|	<p><span>prepend</span>Hello Mars</p>
+			//	|	<p><span>prepend</span>Hello World</p>
+			return this._placeMultiple(query, "first"); // dojo/NodeList
+		},
+
+		after: function(/*String||Element||NodeList*/content){
+			// summary:
+			//		Places the content after every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").after("<span>after</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p></div><span>after</span>
+			//	|	<div id="bar"><p>Hello World</p></div><span>after</span>
+			return this.addContent(content, "after"); // dojo/NodeList
+		},
+
+		insertAfter: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>after</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertAfter("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars</p><span>after</span>
+			//	|	<p>Hello World</p><span>after</span>
+			return this._placeMultiple(query, "after"); // dojo/NodeList
+		},
+
+		before: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Places the content before every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").before("<span>before</span>");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><div id="foo"><p>Hello Mars</p></div>
+			//	|	<span>before</span><div id="bar"><p>Hello World</p></div>
+			return this.addContent(content, "before"); // dojo/NodeList
+		},
+
+		insertBefore: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>before</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertBefore("p");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><p>Hello Mars</p>
+			//	|	<span>before</span><p>Hello World</p>
+			return this._placeMultiple(query, "before"); // dojo/NodeList
+		},
+
+		/*=====
+		remove: function(simpleFilter){
+			// summary:
+			//		alias for dojo/NodeList's orphan method. Removes elements
+			//		in this list that match the simple filter from their parents
+			//		and returns them as a new NodeList.
+			// simpleFilter: String
+			//		single-expression CSS rule. For example, ".thinger" or
+			//		"#someId[attrName='value']" but not "div > span". In short,
+			//		anything which does not invoke a descent to evaluate but
+			//		can instead be used to test a single node is acceptable.
+
+			return; // dojo/NodeList
+		},
+		=====*/
+		remove: NodeList.prototype.orphan,
+
+		wrap: function(/*String||DOMNode*/html){
+			// summary:
+			//		Wrap each node in the NodeList with html passed to wrap.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<b>one</b>
+			//	|	<b>two</b>
+			//		Running this code:
+			//	|	dojo.query("b").wrap("<div><span></span></div>");
+			//		Results in this DOM structure:
+			//	|	<div><span><b>one</b></span></div>
+			//	|	<div><span><b>two</b></span></div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Now cycle through the elements and do the insertion.
+				for(var i = 0, node; node = this[i]; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+					if(node.parentNode){
+						node.parentNode.replaceChild(clone, node);
+					}
+					//Find deepest element and insert old node in it.
+					var insertion = getWrapInsertion(clone);
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapAll: function(/*String||DOMNode*/html){
+			// summary:
+			//		Insert html where the first node in this NodeList lives, then place all
+			//		nodes in this NodeList as the child of the html.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapAll('<div class="allRed"></div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="allRed">
+			// 	|			<div class="red">Red One</div>
+			// 	|			<div class="red">Red Two</div>
+			// 	|		</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Place the wrap HTML in place of the first node.
+				this[0].parentNode.replaceChild(html, this[0]);
+
+				//Now cycle through the elements and move them inside
+				//the wrap.
+				var insertion = getWrapInsertion(html);
+				for(var i = 0, node; node = this[i]; i++){
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapInner: function(/*String||DOMNode*/html){
+			// summary:
+			//		For each node in the NodeList, wrap all its children with the passed in html.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapInner('<span class="special"></span>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red"><span class="special">Red One</span></div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red"><span class="special">Red Two</span></div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+				for(var i = 0; i < this.length; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+
+					//Need to convert the childNodes to an array since wrapAll modifies the
+					//DOM and can change the live childNodes NodeList.
+					this._wrap(lang._toArray(this[i].childNodes), null, this._NodeListCtor).wrapAll(clone);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceWith: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Replaces each node in ths NodeList with the content passed to replaceWith.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the replacing content.
+			//		Note that the returned nodes have been removed from the DOM.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceWith('<div class="green">Green</div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			content = this._normalize(content, this[0]);
+			for(var i = 0, node; node = this[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceAll: function(/*String*/query){
+			// summary:
+			//		replaces nodes matched by the query passed to replaceAll with the nodes
+			//		in this NodeList.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the matched nodes
+			//		from the query. The nodes currently in this NodeLIst could have
+			//		been cloned, so the returned NodeList will include the cloned nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceAll(".blue");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+			var nl = dquery(query);
+			var content = this._normalize(this, this[0]);
+			for(var i = 0, node; node = nl[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		clone: function(){
+			// summary:
+			//		Clones all the nodes in this NodeList and returns them as a new NodeList.
+			// description:
+			//		Only the DOM nodes are cloned, not any attached event handlers.
+			// returns:
+			//		a cloned set of the original nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").clone().appendTo(".container");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+
+			//TODO: need option to clone events?
+			var ary = [];
+			for(var i = 0; i < this.length; i++){
+				ary.push(this._cloneNode(this[i]));
+			}
+			return this._wrap(ary, this, this._NodeListCtor); // dojo/NodeList
+		}
+	});
+
+	//set up html method if one does not exist
+	if(!NodeList.prototype.html){
+		NodeList.prototype.html = NodeList.prototype.innerHTML;
+	}
+
+	return NodeList;
+});
+
+},
+'dojox/mobile/RoundRectList':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/_base/event",
+	"dojo/_base/lang",
+	"dojo/_base/window",
+	"dojo/dom-construct",
+	"dojo/dom-attr",
+	"dijit/_Contained",
+	"dijit/_Container",
+	"dijit/_WidgetBase"
+], function(array, declare, event, lang, win, domConstruct, domAttr, Contained, Container, WidgetBase){
+
+	// module:
+	//		dojox/mobile/RoundRectList
+
+	return declare("dojox.mobile.RoundRectList", [WidgetBase, Container, Contained], {
+		// summary:
+		//		A rounded rectangle list.
+		// description:
+		//		RoundRectList is a rounded rectangle list, which can be used to
+		//		display a group of items. Each item must be a dojox/mobile/ListItem.
+
+		// transition: String
+		//		The default animated transition effect for child items.
+		transition: "slide",
+
+		// iconBase: String
+		//		The default icon path for child items.
+		iconBase: "",
+
+		// iconPos: String
+		//		The default icon position for child items.
+		iconPos: "",
+
+		// select: String
+		//		Selection mode of the list. The check mark is shown for the
+		//		selected list item(s). The value can be "single", "multiple", or "".
+		//		If "single", there can be only one selected item at a time.
+		//		If "multiple", there can be multiple selected items at a time.
+		//		If "", the check mark is not shown.
+		select: "",
+
+		// stateful: Boolean
+		//		If true, the last selected item remains highlighted.
+		stateful: false,
+
+		// syncWithViews: [const] Boolean
+		//		If true, this widget listens to view transition events to be
+		//		synchronized with view's visibility.
+		//		Note that changing the value of the property after the widget
+		//		creation has no effect.
+		syncWithViews: false,
+
+		// editable: [const] Boolean
+		//		If true, the list can be reordered.
+		//		Note that changing the value of the property after the widget
+		//		creation has no effect.
+		editable: false,
+
+		// tag: String
+		//		A name of html tag to create as domNode.
+		tag: "ul",
+
+		/* internal properties */
+		// editableMixinClass: String
+		//		The name of the mixin class.
+		editableMixinClass: "dojox/mobile/_EditableListMixin",
+		
+		// baseClass: String
+		//		The name of the CSS class of this widget.
+		baseClass: "mblRoundRectList",
+		
+		// filterBoxClass: String
+		//		The name of the CSS class added to the DOM node inside which is placed the 
+		//		dojox/mobile/SearchBox created when mixing dojox/mobile/FilteredListMixin.
+		//		The default value is "mblFilteredRoundRectListSearchBox".  
+		filterBoxClass: "mblFilteredRoundRectListSearchBox",
+
+		buildRendering: function(){
+			this.domNode = this.srcNodeRef || domConstruct.create(this.tag);
+			if(this.select){
+				domAttr.set(this.domNode, "role", "listbox");
+				if(this.select === "multiple"){
+					domAttr.set(this.domNode, "aria-multiselectable", "true");
+				}
+			}
+			this.inherited(arguments);
+		},
+
+		postCreate: function(){
+			if(this.editable){
+				require([this.editableMixinClass], lang.hitch(this, function(module){
+					declare.safeMixin(this, new module());
+				}));
+			}
+			this.connect(this.domNode, "onselectstart", event.stop);
+
+			if(this.syncWithViews){ // see also TabBar#postCreate
+				var f = function(view, moveTo, dir, transition, context, method){
+					var child = array.filter(this.getChildren(), function(w){
+						return w.moveTo === "#" + view.id || w.moveTo === view.id; })[0];
+					if(child){ child.set("selected", true); }
+				};
+				this.subscribe("/dojox/mobile/afterTransitionIn", f);
+				this.subscribe("/dojox/mobile/startView", f);
+			}
+		},
+
+		resize: function(){
+			// summary:
+			//		Calls resize() of each child widget.
+			array.forEach(this.getChildren(), function(child){
+				if(child.resize){ child.resize(); }
+			});
+		},
+
+		onCheckStateChanged: function(/*Widget*//*===== listItem, =====*/ /*String*//*===== newState =====*/){
+			// summary:
+			//		Stub function to connect to from your application.
+			// description:
+			//		Called when the check state has been changed.
+		},
+
+		_setStatefulAttr: function(stateful){
+			// tags:
+			//		private
+			this._set("stateful", stateful);
+			this.selectOne = stateful;
+			array.forEach(this.getChildren(), function(child){
+				child.setArrow && child.setArrow();
+			});
+		},
+
+		deselectItem: function(/*dojox/mobile/ListItem*/item){
+			// summary:
+			//		Deselects the given item.
+			item.set("selected", false);
+		},
+
+		deselectAll: function(){
+			// summary:
+			//		Deselects all the items.
+			array.forEach(this.getChildren(), function(child){
+				child.set("selected", false);
+			});
+		},
+
+		selectItem: function(/*ListItem*/item){
+			// summary:
+			//		Selects the given item.
+			item.set("selected", true);
+		}
+	});
+});
+
+},
+'dojox/mobile/Button':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/dom-class",
+	"dojo/dom-construct",
+	"dijit/_WidgetBase",
+	"dijit/form/_ButtonMixin",
+	"dijit/form/_FormWidgetMixin",
+	"dojo/has",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/Button"
+	],
+	function(array, declare, domClass, domConstruct, WidgetBase, ButtonMixin, FormWidgetMixin, has, BidiButton){
+
+	var Button = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiButton" : "dojox.mobile.Button", [WidgetBase, FormWidgetMixin, ButtonMixin], {
+		// summary:
+		//		Non-templated BUTTON widget with a thin API wrapper for click 
+		//		events and for setting the label.
+		//
+		//		Buttons can display a label, an icon, or both.
+		//		A label should always be specified (through innerHTML) or the label
+		//		attribute.  It can be hidden via showLabel=false.
+		// example:
+		//	|	<button data-dojo-type="dojox/mobile/Button" onClick="...">Hello world</button>
+
+		// baseClass: String
+		//		The name of the CSS class of this widget.
+		baseClass: "mblButton",
+
+		// _setTypeAttr: [private] Function 
+		//		Overrides the automatic assignment of type to nodes, because it causes
+		//		exception on IE. Instead, the type must be specified as this.type
+		//		when the node is created, as part of the original DOM.
+		_setTypeAttr: null,
+
+		// duration: Number
+		//		The duration of selection, in milliseconds, or -1 for no post-click CSS styling.
+		duration: 1000,
+
+		/*=====
+		// label: String
+		//		The label of the button.
+		label: "",
+		=====*/
+		
+		_onClick: function(e){
+			// tags:
+			//		private
+			var ret = this.inherited(arguments);
+			if(ret && this.duration >= 0){ // if its not a button with a state, then emulate press styles
+				var button = this.focusNode || this.domNode;
+				var newStateClasses = (this.baseClass+' '+this["class"]).split(" ");
+				newStateClasses = array.map(newStateClasses, function(c){ return c+"Selected"; });
+				domClass.add(button, newStateClasses);
+				this.defer(function(){
+					domClass.remove(button, newStateClasses);
+				}, this.duration);
+			}
+			return ret;
+		},
+
+		isFocusable: function(){ 
+			// Override of the method of dijit/_WidgetBase.
+			return false; 
+		},
+
+		buildRendering: function(){
+			if(!this.srcNodeRef){
+				this.srcNodeRef = domConstruct.create("button", {"type": this.type});
+			}else if(this._cv){
+				var n = this.srcNodeRef.firstChild;
+				if(n && n.nodeType === 3){
+					n.nodeValue = this._cv(n.nodeValue);
+				}
+			}
+			this.inherited(arguments);
+			this.focusNode = this.domNode;
+		},
+
+		postCreate: function(){
+			this.inherited(arguments);
+			this.connect(this.domNode, "onclick", "_onClick");
+		},
+
+		_setLabelAttr: function(/*String*/ content){
+			// tags:
+			//		private
+			this.inherited(arguments, [this._cv ? this._cv(content) : content]);
+		}
+	});
+
+	return has("dojo-bidi") ? declare("dojox.mobile.Button", [Button, BidiButton]) : Button;
+});
+
+},
+'dijit/form/_ButtonMixin':function(){
+define([
+	"dojo/_base/declare", // declare
+	"dojo/dom", // dom.setSelectable
+	"dojo/has",
+	"../registry"        // registry.byNode
+], function(declare, dom, has, registry){
+
+	// module:
+	//		dijit/form/_ButtonMixin
+
+	var ButtonMixin = declare("dijit.form._ButtonMixin" + (has("dojo-bidi") ? "_NoBidi" : ""), null, {
+		// summary:
+		//		A mixin to add a thin standard API wrapper to a normal HTML button
+		// description:
+		//		A label should always be specified (through innerHTML) or the label attribute.
+		//
+		//		Attach points:
+		//
+		//		- focusNode (required): this node receives focus
+		//		- valueNode (optional): this node's value gets submitted with FORM elements
+		//		- containerNode (optional): this node gets the innerHTML assignment for label
+		// example:
+		// |	<button data-dojo-type="dijit/form/Button" onClick="...">Hello world</button>
+		// example:
+		// |	var button1 = new Button({label: "hello world", onClick: foo});
+		// |	dojo.body().appendChild(button1.domNode);
+
+		// label: HTML String
+		//		Content to display in button.
+		label: "",
+
+		// type: [const] String
+		//		Type of button (submit, reset, button, checkbox, radio)
+		type: "button",
+
+		__onClick: function(/*Event*/ e){
+			// summary:
+			//		Internal function to divert the real click onto the hidden INPUT that has a native default action associated with it
+			// type:
+			//		private
+			e.stopPropagation();
+			e.preventDefault();
+			if(!this.disabled){
+				// cannot use on.emit since button default actions won't occur
+				this.valueNode.click(e);
+			}
+			return false;
+		},
+
+		_onClick: function(/*Event*/ e){
+			// summary:
+			//		Internal function to handle click actions
+			if(this.disabled){
+				e.stopPropagation();
+				e.preventDefault();
+				return false;
+			}
+			if(this.onClick(e) === false){
+				e.preventDefault();
+			}
+			cancelled = e.defaultPrevented;
+
+			// Signal Form/Dialog to submit/close.  For 2.0, consider removing this code and instead making the Form/Dialog
+			// listen for bubbled click events where evt.target.type == "submit" && !evt.defaultPrevented.
+			if(!cancelled && this.type == "submit" && !(this.valueNode || this.focusNode).form){
+				for(var node = this.domNode; node.parentNode; node = node.parentNode){
+					var widget = registry.byNode(node);
+					if(widget && typeof widget._onSubmit == "function"){
+						widget._onSubmit(e);
+						e.preventDefault(); // action has already occurred
+						cancelled = true;
+						break;
+					}
+				}
+			}
+
+			return !cancelled;
+		},
+
+		postCreate: function(){
+			this.inherited(arguments);
+			dom.setSelectable(this.focusNode, false);
+		},
+
+		onClick: function(/*Event*/ /*===== e =====*/){
+			// summary:
+			//		Callback for when button is clicked.
+			//		If type="submit", return true to perform submit, or false to cancel it.
+			// type:
+			//		callback
+			return true;		// Boolean
+		},
+
+		_setLabelAttr: function(/*String*/ content){
+			// summary:
+			//		Hook for set('label', ...) to work.
+			// description:
+			//		Set the label (text) of the button; takes an HTML string.
+			this._set("label", content);
+			var labelNode = this.containerNode || this.focusNode;
+			labelNode.innerHTML = content;
+		}
+	});
+
+	if(has("dojo-bidi")){
+		ButtonMixin = declare("dijit.form._ButtonMixin", ButtonMixin, {
+			_setLabelAttr: function(){
+				this.inherited(arguments);
+				var labelNode = this.containerNode || this.focusNode;
+				this.applyTextDir(labelNode);
+			}
+		});
+	}
+
+	return ButtonMixin;
+});
+
+},
+'dijit/form/_FormWidgetMixin':function(){
+define([
+	"dojo/_base/array", // array.forEach
+	"dojo/_base/declare", // declare
+	"dojo/dom-attr", // domAttr.set
+	"dojo/dom-style", // domStyle.get
+	"dojo/_base/lang", // lang.hitch lang.isArray
+	"dojo/mouse", // mouse.isLeft
+	"dojo/on",
+	"dojo/sniff", // has("webkit")
+	"dojo/window", // winUtils.scrollIntoView
+	"../a11y"    // a11y.hasDefaultTabStop
+], function(array, declare, domAttr, domStyle, lang, mouse, on, has, winUtils, a11y){
+
+	// module:
+	//		dijit/form/_FormWidgetMixin
+
+	return declare("dijit.form._FormWidgetMixin", null, {
+		// summary:
+		//		Mixin for widgets corresponding to native HTML elements such as `<checkbox>` or `<button>`,
+		//		which can be children of a `<form>` node or a `dijit/form/Form` widget.
+		//
+		// description:
+		//		Represents a single HTML element.
+		//		All these widgets should have these attributes just like native HTML input elements.
+		//		You can set them during widget construction or afterwards, via `dijit/_WidgetBase.set()`.
+		//
+		//		They also share some common methods.
+
+		// name: [const] String
+		//		Name used when submitting form; same as "name" attribute or plain HTML elements
+		name: "",
+
+		// alt: String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		alt: "",
+
+		// value: String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		value: "",
+
+		// type: [const] String
+		//		Corresponds to the native HTML `<input>` element's attribute.
+		type: "text",
+
+		// type: String
+		//		Apply aria-label in markup to the widget's focusNode
+		"aria-label": "focusNode",
+
+		// tabIndex: String
+		//		Order fields are traversed when user hits the tab key
+		tabIndex: "0",
+		_setTabIndexAttr: "focusNode", // force copy even when tabIndex default value, needed since Button is <span>
+
+		// disabled: Boolean
+		//		Should this widget respond to user input?
+		//		In markup, this is specified as "disabled='disabled'", or just "disabled".
+		disabled: false,
+
+		// intermediateChanges: Boolean
+		//		Fires onChange for each value change or only on demand
+		intermediateChanges: false,
+
+		// scrollOnFocus: Boolean
+		//		On focus, should this widget scroll into view?
+		scrollOnFocus: true,
+
+		// Override _WidgetBase mapping id to this.domNode, needs to be on focusNode so <label> etc.
+		// works with screen reader
+		_setIdAttr: "focusNode",
+
+		_setDisabledAttr: function(/*Boolean*/ value){
+			this._set("disabled", value);
+			domAttr.set(this.focusNode, 'disabled', value);
+			if(this.valueNode){
+				domAttr.set(this.valueNode, 'disabled', value);
+			}
+			this.focusNode.setAttribute("aria-disabled", value ? "true" : "false");
+
+			if(value){
+				// reset these, because after the domNode is disabled, we can no longer receive
+				// mouse related events, see #4200
+				this._set("hovering", false);
+				this._set("active", false);
+
+				// clear tab stop(s) on this widget's focusable node(s)  (ComboBox has two focusable nodes)
+				var attachPointNames = "tabIndex" in this.attributeMap ? this.attributeMap.tabIndex :
+					("_setTabIndexAttr" in this) ? this._setTabIndexAttr : "focusNode";
+				array.forEach(lang.isArray(attachPointNames) ? attachPointNames : [attachPointNames], function(attachPointName){
+					var node = this[attachPointName];
+					// complex code because tabIndex=-1 on a <div> doesn't work on FF
+					if(has("webkit") || a11y.hasDefaultTabStop(node)){    // see #11064 about webkit bug
+						node.setAttribute('tabIndex', "-1");
+					}else{
+						node.removeAttribute('tabIndex');
+					}
+				}, this);
+			}else{
+				if(this.tabIndex != ""){
+					this.set('tabIndex', this.tabIndex);
+				}
+			}
+		},
+
+		_onFocus: function(/*String*/ by){
+			// If user clicks on the widget, even if the mouse is released outside of it,
+			// this widget's focusNode should get focus (to mimic native browser behavior).
+			// Browsers often need help to make sure the focus via mouse actually gets to the focusNode.
+			// TODO: consider removing all of this for 2.0 or sooner, see #16622 etc.
+			if(by == "mouse" && this.isFocusable()){
+				// IE exhibits strange scrolling behavior when refocusing a node so only do it when !focused.
+				var focusHandle = this.own(on(this.focusNode, "focus", function(){
+					mouseUpHandle.remove();
+					focusHandle.remove();
+				}))[0];
+				// Set a global event to handle mouseup, so it fires properly
+				// even if the cursor leaves this.domNode before the mouse up event.
+				var mouseUpHandle = this.own(on(this.ownerDocumentBody, "mouseup, touchend", lang.hitch(this, function(evt){
+					mouseUpHandle.remove();
+					focusHandle.remove();
+					// if here, then the mousedown did not focus the focusNode as the default action
+					if(this.focused){
+						if(evt.type == "touchend"){
+							this.defer("focus"); // native focus hasn't occurred yet
+						}else{
+							this.focus(); // native focus already occurred on mousedown
+						}
+					}
+				})))[0];
+			}
+			if(this.scrollOnFocus){
+				this.defer(function(){
+					winUtils.scrollIntoView(this.domNode);
+				}); // without defer, the input caret position can change on mouse click
+			}
+			this.inherited(arguments);
+		},
+
+		isFocusable: function(){
+			// summary:
+			//		Tells if this widget is focusable or not.  Used internally by dijit.
+			// tags:
+			//		protected
+			return !this.disabled && this.focusNode && (domStyle.get(this.domNode, "display") != "none");
+		},
+
+		focus: function(){
+			// summary:
+			//		Put focus on this widget
+			if(!this.disabled && this.focusNode.focus){
+				try{
+					this.focusNode.focus();
+				}catch(e){
+				}
+				/*squelch errors from hidden nodes*/
+			}
+		},
+
+		compare: function(/*anything*/ val1, /*anything*/ val2){
+			// summary:
+			//		Compare 2 values (as returned by get('value') for this widget).
+			// tags:
+			//		protected
+			if(typeof val1 == "number" && typeof val2 == "number"){
+				return (isNaN(val1) && isNaN(val2)) ? 0 : val1 - val2;
+			}else if(val1 > val2){
+				return 1;
+			}else if(val1 < val2){
+				return -1;
+			}else{
+				return 0;
+			}
+		},
+
+		onChange: function(/*===== newValue =====*/){
+			// summary:
+			//		Callback when this widget's value is changed.
+			// tags:
+			//		callback
+		},
+
+		// _onChangeActive: [private] Boolean
+		//		Indicates that changes to the value should call onChange() callback.
+		//		This is false during widget initialization, to avoid calling onChange()
+		//		when the initial value is set.
+		_onChangeActive: false,
+
+		_handleOnChange: function(/*anything*/ newValue, /*Boolean?*/ priorityChange){
+			// summary:
+			//		Called when the value of the widget is set.  Calls onChange() if appropriate
+			// newValue:
+			//		the new value
+			// priorityChange:
+			//		For a slider, for example, dragging the slider is priorityChange==false,
+			//		but on mouse up, it's priorityChange==true.  If intermediateChanges==false,
+			//		onChange is only called form priorityChange=true events.
+			// tags:
+			//		private
+			if(this._lastValueReported == undefined && (priorityChange === null || !this._onChangeActive)){
+				// this block executes not for a change, but during initialization,
+				// and is used to store away the original value (or for ToggleButton, the original checked state)
+				this._resetValue = this._lastValueReported = newValue;
+			}
+			this._pendingOnChange = this._pendingOnChange
+				|| (typeof newValue != typeof this._lastValueReported)
+				|| (this.compare(newValue, this._lastValueReported) != 0);
+			if((this.intermediateChanges || priorityChange || priorityChange === undefined) && this._pendingOnChange){
+				this._lastValueReported = newValue;
+				this._pendingOnChange = false;
+				if(this._onChangeActive){
+					if(this._onChangeHandle){
+						this._onChangeHandle.remove();
+					}
+					// defer allows hidden value processing to run and
+					// also the onChange handler can safely adjust focus, etc
+					this._onChangeHandle = this.defer(
+						function(){
+							this._onChangeHandle = null;
+							this.onChange(newValue);
+						}); // try to collapse multiple onChange's fired faster than can be processed
+				}
+			}
+		},
+
+		create: function(){
+			// Overrides _Widget.create()
+			this.inherited(arguments);
+			this._onChangeActive = true;
+		},
+
+		destroy: function(){
+			if(this._onChangeHandle){ // destroy called before last onChange has fired
+				this._onChangeHandle.remove();
+				this.onChange(this._lastValueReported);
+			}
+			this.inherited(arguments);
+		}
+	});
+});
+
+},
+'dojo/window':function(){
+define(["./_base/lang", "./sniff", "./_base/window", "./dom", "./dom-geometry", "./dom-style", "./dom-construct"],
+	function(lang, has, baseWindow, dom, geom, style, domConstruct){
+
+	// feature detection
+	/* not needed but included here for future reference
+	has.add("rtl-innerVerticalScrollBar-on-left", function(win, doc){
+		var	body = baseWindow.body(doc),
+			scrollable = domConstruct.create('div', {
+				style: {overflow:'scroll', overflowX:'hidden', direction:'rtl', visibility:'hidden', position:'absolute', left:'0', width:'64px', height:'64px'}
+			}, body, "last"),
+			center = domConstruct.create('center', {
+				style: {overflow:'hidden', direction:'ltr'}
+			}, scrollable, "last"),
+			inner = domConstruct.create('div', {
+				style: {overflow:'visible', display:'inline' }
+			}, center, "last");
+		inner.innerHTML="&nbsp;";
+		var midPoint = Math.max(inner.offsetLeft, geom.position(inner).x);
+		var ret = midPoint >= 32;
+		center.removeChild(inner);
+		scrollable.removeChild(center);
+		body.removeChild(scrollable);
+		return ret;
+	});
+	*/
+	has.add("rtl-adjust-position-for-verticalScrollBar", function(win, doc){
+		var	body = baseWindow.body(doc),
+			scrollable = domConstruct.create('div', {
+				style: {overflow:'scroll', overflowX:'visible', direction:'rtl', visibility:'hidden', position:'absolute', left:'0', top:'0', width:'64px', height:'64px'}
+			}, body, "last"),
+			div = domConstruct.create('div', {
+				style: {overflow:'hidden', direction:'ltr'}
+			}, scrollable, "last"),
+			ret = geom.position(div).x != 0;
+		scrollable.removeChild(div);
+		body.removeChild(scrollable);
+		return ret;
+	});
+
+	has.add("position-fixed-support", function(win, doc){
+		// IE6, IE7+quirks, and some older mobile browsers don't support position:fixed
+		var	body = baseWindow.body(doc),
+			outer = domConstruct.create('span', {
+				style: {visibility:'hidden', position:'fixed', left:'1px', top:'1px'}
+			}, body, "last"),
+			inner = domConstruct.create('span', {
+				style: {position:'fixed', left:'0', top:'0'}
+			}, outer, "last"),
+			ret = geom.position(inner).x != geom.position(outer).x;
+		outer.removeChild(inner);
+		body.removeChild(outer);
+		return ret;
+	});
+
+	// module:
+	//		dojo/window
+
+	var window = {
+		// summary:
+		//		TODOC
+
+		getBox: function(/*Document?*/ doc){
+			// summary:
+			//		Returns the dimensions and scroll position of the viewable area of a browser window
+
+			doc = doc || baseWindow.doc;
+
+			var
+				scrollRoot = (doc.compatMode == 'BackCompat') ? baseWindow.body(doc) : doc.documentElement,
+				// get scroll position
+				scroll = geom.docScroll(doc), // scrollRoot.scrollTop/Left should work
+				w, h;
+
+			if(has("touch")){ // if(scrollbars not supported)
+				var uiWindow = window.get(doc);   // use UI window, not dojo.global window
+				// on mobile, scrollRoot.clientHeight <= uiWindow.innerHeight <= scrollRoot.offsetHeight, return uiWindow.innerHeight
+				w = uiWindow.innerWidth || scrollRoot.clientWidth; // || scrollRoot.clientXXX probably never evaluated
+				h = uiWindow.innerHeight || scrollRoot.clientHeight;
+			}else{
+				// on desktops, scrollRoot.clientHeight <= scrollRoot.offsetHeight <= uiWindow.innerHeight, return scrollRoot.clientHeight
+				// uiWindow.innerWidth/Height includes the scrollbar and cannot be used
+				w = scrollRoot.clientWidth;
+				h = scrollRoot.clientHeight;
+			}
+			return {
+				l: scroll.x,
+				t: scroll.y,
+				w: w,
+				h: h
+			};
+		},
+
+		get: function(/*Document*/ doc){
+			// summary:
+			//		Get window object associated with document doc.
+			// doc:
+			//		The document to get the associated window for.
+
+			// In some IE versions (at least 6.0), document.parentWindow does not return a
+			// reference to the real window object (maybe a copy), so we must fix it as well
+			// We use IE specific execScript to attach the real window reference to
+			// document._parentWindow for later use
+			if(has("ie") && window !== document.parentWindow){
+				/*
+				In IE 6, only the variable "window" can be used to connect events (others
+				may be only copies).
+				*/
+				doc.parentWindow.execScript("document._parentWindow = window;", "Javascript");
+				//to prevent memory leak, unset it after use
+				//another possibility is to add an onUnload handler which seems overkill to me (liucougar)
+				var win = doc._parentWindow;
+				doc._parentWindow = null;
+				return win;	//	Window
+			}
+
+			return doc.parentWindow || doc.defaultView;	//	Window
+		},
+
+		scrollIntoView: function(/*DomNode*/ node, /*Object?*/ pos){
+			// summary:
+			//		Scroll the passed node into view using minimal movement, if it is not already.
+
+			// Don't rely on node.scrollIntoView working just because the function is there since
+			// it forces the node to the page's bottom or top (and left or right in IE) without consideration for the minimal movement.
+			// WebKit's node.scrollIntoViewIfNeeded doesn't work either for inner scrollbars in right-to-left mode
+			// and when there's a fixed position scrollable element
+
+			try{ // catch unexpected/unrecreatable errors (#7808) since we can recover using a semi-acceptable native method
+				node = dom.byId(node);
+				var	doc = node.ownerDocument || baseWindow.doc,	// TODO: why baseWindow.doc?  Isn't node.ownerDocument always defined?
+					body = baseWindow.body(doc),
+					html = doc.documentElement || body.parentNode,
+					isIE = has("ie"),
+					isWK = has("webkit");
+				// if an untested browser, then use the native method
+				if(node == body || node == html){ return; }
+				if(!(has("mozilla") || isIE || isWK || has("opera")) && ("scrollIntoView" in node)){
+					node.scrollIntoView(false); // short-circuit to native if possible
+					return;
+				}
+				var	backCompat = doc.compatMode == 'BackCompat',
+					rootWidth = Math.min(body.clientWidth || html.clientWidth, html.clientWidth || body.clientWidth),
+					rootHeight = Math.min(body.clientHeight || html.clientHeight, html.clientHeight || body.clientHeight),
+					scrollRoot = (isWK || backCompat) ? body : html,
+					nodePos = pos || geom.position(node),
+					el = node.parentNode,
+					isFixed = function(el){
+						return (isIE <= 6 || (isIE == 7 && backCompat))
+							? false
+							: (has("position-fixed-support") && (style.get(el, 'position').toLowerCase() == "fixed"));
+					};
+				if(isFixed(node)){ return; } // nothing to do
+				while(el){
+					if(el == body){ el = scrollRoot; }
+					var	elPos = geom.position(el),
+						fixedPos = isFixed(el),
+						rtl = style.getComputedStyle(el).direction.toLowerCase() == "rtl";
+
+					if(el == scrollRoot){
+						elPos.w = rootWidth; elPos.h = rootHeight;
+						if(scrollRoot == html && isIE && rtl){ elPos.x += scrollRoot.offsetWidth-elPos.w; } // IE workaround where scrollbar causes negative x
+						if(elPos.x < 0 || !isIE || isIE >= 9){ elPos.x = 0; } // older IE can have values > 0
+						if(elPos.y < 0 || !isIE || isIE >= 9){ elPos.y = 0; }
+					}else{
+						var pb = geom.getPadBorderExtents(el);
+						elPos.w -= pb.w; elPos.h -= pb.h; elPos.x += pb.l; elPos.y += pb.t;
+						var clientSize = el.clientWidth,
+							scrollBarSize = elPos.w - clientSize;
+						if(clientSize > 0 && scrollBarSize > 0){
+							if(rtl && has("rtl-adjust-position-for-verticalScrollBar")){
+								elPos.x += scrollBarSize;
+							}
+							elPos.w = clientSize;
+						}
+						clientSize = el.clientHeight;
+						scrollBarSize = elPos.h - clientSize;
+						if(clientSize > 0 && scrollBarSize > 0){
+							elPos.h = clientSize;
+						}
+					}
+					if(fixedPos){ // bounded by viewport, not parents
+						if(elPos.y < 0){
+							elPos.h += elPos.y; elPos.y = 0;
+						}
+						if(elPos.x < 0){
+							elPos.w += elPos.x; elPos.x = 0;
+						}
+						if(elPos.y + elPos.h > rootHeight){
+							elPos.h = rootHeight - elPos.y;
+						}
+						if(elPos.x + elPos.w > rootWidth){
+							elPos.w = rootWidth - elPos.x;
+						}
+					}
+					// calculate overflow in all 4 directions
+					var	l = nodePos.x - elPos.x, // beyond left: < 0
+//						t = nodePos.y - Math.max(elPos.y, 0), // beyond top: < 0
+						t = nodePos.y - elPos.y, // beyond top: < 0
+						r = l + nodePos.w - elPos.w, // beyond right: > 0
+						bot = t + nodePos.h - elPos.h; // beyond bottom: > 0
+					var s, old;
+					if(r * l > 0 && (!!el.scrollLeft || el == scrollRoot || el.scrollWidth > el.offsetHeight)){
+						s = Math[l < 0? "max" : "min"](l, r);
+						if(rtl && ((isIE == 8 && !backCompat) || isIE >= 9)){ s = -s; }
+						old = el.scrollLeft;
+						el.scrollLeft += s;
+						s = el.scrollLeft - old;
+						nodePos.x -= s;
+					}
+					if(bot * t > 0 && (!!el.scrollTop || el == scrollRoot || el.scrollHeight > el.offsetHeight)){
+						s = Math.ceil(Math[t < 0? "max" : "min"](t, bot));
+						old = el.scrollTop;
+						el.scrollTop += s;
+						s = el.scrollTop - old;
+						nodePos.y -= s;
+					}
+					el = (el != scrollRoot) && !fixedPos && el.parentNode;
+				}
+			}catch(error){
+				console.error('scrollIntoView: ' + error);
+				node.scrollIntoView(false);
+			}
+		}
+	};
+
+	 1  && lang.setObject("dojo.window", window);
+
+	return window;
+});
+
+},
+'dijit/a11y':function(){
+define([
+	"dojo/_base/array", // array.forEach array.map
+	"dojo/dom",			// dom.byId
+	"dojo/dom-attr", // domAttr.attr domAttr.has
+	"dojo/dom-style", // domStyle.style
+	"dojo/_base/lang", // lang.mixin()
+	"dojo/sniff", // has("ie")  1 
+	"./main"	// for exporting methods to dijit namespace
+], function(array, dom, domAttr, domStyle, lang, has, dijit){
+
+	// module:
+	//		dijit/a11y
+
+	var a11y = {
+		// summary:
+		//		Accessibility utility functions (keyboard, tab stops, etc.)
+
+		_isElementShown: function(/*Element*/ elem){
+			var s = domStyle.get(elem);
+			return (s.visibility != "hidden")
+				&& (s.visibility != "collapsed")
+				&& (s.display != "none")
+				&& (domAttr.get(elem, "type") != "hidden");
+		},
+
+		hasDefaultTabStop: function(/*Element*/ elem){
+			// summary:
+			//		Tests if element is tab-navigable even without an explicit tabIndex setting
+
+			// No explicit tabIndex setting, need to investigate node type
+			switch(elem.nodeName.toLowerCase()){
+				case "a":
+					// An <a> w/out a tabindex is only navigable if it has an href
+					return domAttr.has(elem, "href");
+				case "area":
+				case "button":
+				case "input":
+				case "object":
+				case "select":
+				case "textarea":
+					// These are navigable by default
+					return true;
+				case "iframe":
+					// If it's an editor <iframe> then it's tab navigable.
+					var body;
+					try{
+						// non-IE
+						var contentDocument = elem.contentDocument;
+						if("designMode" in contentDocument && contentDocument.designMode == "on"){
+							return true;
+						}
+						body = contentDocument.body;
+					}catch(e1){
+						// contentWindow.document isn't accessible within IE7/8
+						// if the iframe.src points to a foreign url and this
+						// page contains an element, that could get focus
+						try{
+							body = elem.contentWindow.document.body;
+						}catch(e2){
+							return false;
+						}
+					}
+					return body && (body.contentEditable == 'true' ||
+						(body.firstChild && body.firstChild.contentEditable == 'true'));
+				default:
+					return elem.contentEditable == 'true';
+			}
+		},
+
+		isTabNavigable: function(/*Element*/ elem){
+			// summary:
+			//		Tests if an element is tab-navigable
+
+			// TODO: convert (and rename method) to return effective tabIndex; will save time in _getTabNavigable()
+			if(domAttr.get(elem, "disabled")){
+				return false;
+			}else if(domAttr.has(elem, "tabIndex")){
+				// Explicit tab index setting
+				return domAttr.get(elem, "tabIndex") >= 0; // boolean
+			}else{
+				// No explicit tabIndex setting, so depends on node type
+				return a11y.hasDefaultTabStop(elem);
+			}
+		},
+
+		_getTabNavigable: function(/*DOMNode*/ root){
+			// summary:
+			//		Finds descendants of the specified root node.
+			// description:
+			//		Finds the following descendants of the specified root node:
+			//
+			//		- the first tab-navigable element in document order
+			//		  without a tabIndex or with tabIndex="0"
+			//		- the last tab-navigable element in document order
+			//		  without a tabIndex or with tabIndex="0"
+			//		- the first element in document order with the lowest
+			//		  positive tabIndex value
+			//		- the last element in document order with the highest
+			//		  positive tabIndex value
+			var first, last, lowest, lowestTabindex, highest, highestTabindex, radioSelected = {};
+
+			function radioName(node){
+				// If this element is part of a radio button group, return the name for that group.
+				return node && node.tagName.toLowerCase() == "input" &&
+					node.type && node.type.toLowerCase() == "radio" &&
+					node.name && node.name.toLowerCase();
+			}
+
+			var shown = a11y._isElementShown, isTabNavigable = a11y.isTabNavigable;
+			var walkTree = function(/*DOMNode*/ parent){
+				for(var child = parent.firstChild; child; child = child.nextSibling){
+					// Skip text elements, hidden elements, and also non-HTML elements (those in custom namespaces) in IE,
+					// since show() invokes getAttribute("type"), which crash on VML nodes in IE.
+					if(child.nodeType != 1 || (has("ie") <= 9 && child.scopeName !== "HTML") || !shown(child)){
+						continue;
+					}
+
+					if(isTabNavigable(child)){
+						var tabindex = +domAttr.get(child, "tabIndex");	// + to convert string --> number
+						if(!domAttr.has(child, "tabIndex") || tabindex == 0){
+							if(!first){
+								first = child;
+							}
+							last = child;
+						}else if(tabindex > 0){
+							if(!lowest || tabindex < lowestTabindex){
+								lowestTabindex = tabindex;
+								lowest = child;
+							}
+							if(!highest || tabindex >= highestTabindex){
+								highestTabindex = tabindex;
+								highest = child;
+							}
+						}
+						var rn = radioName(child);
+						if(domAttr.get(child, "checked") && rn){
+							radioSelected[rn] = child;
+						}
+					}
+					if(child.nodeName.toUpperCase() != 'SELECT'){
+						walkTree(child);
+					}
+				}
+			};
+			if(shown(root)){
+				walkTree(root);
+			}
+			function rs(node){
+				// substitute checked radio button for unchecked one, if there is a checked one with the same name.
+				return radioSelected[radioName(node)] || node;
+			}
+
+			return { first: rs(first), last: rs(last), lowest: rs(lowest), highest: rs(highest) };
+		},
+
+		getFirstInTabbingOrder: function(/*String|DOMNode*/ root, /*Document?*/ doc){
+			// summary:
+			//		Finds the descendant of the specified root node
+			//		that is first in the tabbing order
+			var elems = a11y._getTabNavigable(dom.byId(root, doc));
+			return elems.lowest ? elems.lowest : elems.first; // DomNode
+		},
+
+		getLastInTabbingOrder: function(/*String|DOMNode*/ root, /*Document?*/ doc){
+			// summary:
+			//		Finds the descendant of the specified root node
+			//		that is last in the tabbing order
+			var elems = a11y._getTabNavigable(dom.byId(root, doc));
+			return elems.last ? elems.last : elems.highest; // DomNode
+		}
+	};
+
+	 1  && lang.mixin(dijit, a11y);
+
+	return a11y;
+});
+
+},
+'dojox/mobile/RoundRectStoreList':function(){
+define([
+	"dojo/_base/declare",
+	"./RoundRectList",
+	"./_StoreListMixin"
+], function(declare, RoundRectList, StoreListMixin){
+
+	// module:
+	//		dojox/mobile/RoundRectStoreList
+
+	return declare("dojox.mobile.RoundRectStoreList", [RoundRectList, StoreListMixin], {
+		// summary:
+		//		A dojo/store-enabled version of RoundRectList.
+		// description:
+		//		RoundRectStoreList is a subclass of RoundRectList which
+		//		can generate ListItems according to the given dojo/store store.
+	});
+});
+
+},
+'dojox/mobile/_StoreListMixin':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"./_StoreMixin",
+	"./ListItem",
+	"dojo/has",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/_StoreListMixin"
+], function(array, declare, StoreMixin, ListItem, has, BidiStoreListMixin){
+
+	// module:
+	//		dojox/mobile/_StoreListMixin
+
+	var _StoreListMixin = declare(has("dojo-bidi") ? "dojox.mobile._NonBidiStoreListMixin" : "dojox.mobile._StoreListMixin", StoreMixin, {
+		// summary:
+		//		Mixin for widgets to generate the list items corresponding to
+		//		the dojo/store data provider object.
+		// description:
+		//		Mixin for widgets to generate the list items corresponding to
+		//		the dojo/store data provider object.
+		//		By mixing this class into the widgets, the list item nodes are
+		//		generated as the child nodes of the widget and automatically
+		//		regenerated whenever the corresponding data items are modified.
+
+		// append: Boolean
+		//		If true, refresh() does not clear the existing items.
+		append: false,
+
+		// itemMap: Object
+		//		An optional parameter mapping field names from the store to ItemList names.
+		//		Example: itemMap:{text:'label', profile_image_url:'icon'}
+		itemMap: null,
+
+		// itemRenderer: ListItem class or subclass
+		//		The class used to create list items. Default is dojox/mobile/ListItem.
+		itemRenderer: ListItem,
+
+		buildRendering: function(){
+			this.inherited(arguments);
+			if(!this.store){ return; }
+			var store = this.store;
+			this.store = null;
+			this.setStore(store, this.query, this.queryOptions);
+		},
+
+		createListItem: function(/*Object*/item){
+			// summary:
+			//		Creates a list item widget.
+			return new this.itemRenderer(this._createItemProperties(item));
+		},
+		
+		_createItemProperties: function(/*Object*/item){
+			// summary:
+			//		Creates list item properties.
+			var props = {};
+			if(!item["label"]){
+				props["label"] = item[this.labelProperty];
+			}
+			// TODO this code should be like for textDir in the bidi mixin createListItem method
+			// however for that dynamic set/get of the dir property must be supported first
+			// that is why for now as a workaround we keep the code here
+			if(has("dojo-bidi") && typeof props["dir"] == "undefined"){
+				props["dir"] = this.isLeftToRight() ? "ltr" : "rtl";
+			}
+			for(var name in item){
+				props[(this.itemMap && this.itemMap[name]) || name] = item[name];
+			}
+			return props;
+		},
+		
+		_setDirAttr: function(props){
+			// summary:
+			//		Set the 'dir' attribute to support Mirroring.
+			//		To be implemented by the bidi/_StoreLisMixin.js
+			return props;
+		},
+		generateList: function(/*Array*/items){
+			// summary:
+			//		Given the data, generates a list of items.
+			if(!this.append){
+				array.forEach(this.getChildren(), function(child){
+					child.destroyRecursive();
+				});
+			}
+			array.forEach(items, function(item, index){
+				this.addChild(this.createListItem(item));
+				if(item[this.childrenProperty]){
+					array.forEach(item[this.childrenProperty], function(child, index){
+						this.addChild(this.createListItem(child));
+					}, this);
+				}
+			}, this);
+		},
+
+		onComplete: function(/*Array*/items){
+			// summary:
+			//		A handler that is called after the fetch completes.
+			this.generateList(items);
+		},
+
+		onError: function(/*Object*/ /*===== errorData =====*/){
+			// summary:
+			//		An error handler.
+		},
+
+		onAdd: function(/*Object*/item, /*Number*/insertedInto){
+			// summary:
+			//		Calls createListItem and adds the new list item when a new data item has been added to the store.
+			this.addChild(this.createListItem(item), insertedInto);
+		},
+
+		onUpdate: function(/*Object*/item, /*Number*/insertedInto){
+			// summary:
+			//		Updates an existing list item when a data item has been modified.
+			this.getChildren()[insertedInto].set(this._createItemProperties(item));
+		},
+
+		onDelete: function(/*Object*/item, /*Number*/removedFrom){
+			// summary:
+			//		Deletes an existing item.
+			this.getChildren()[removedFrom].destroyRecursive();
+		}
+	});
+	return has("dojo-bidi") ? declare("dojox.mobile._StoreListMixin", [_StoreListMixin, BidiStoreListMixin]) : _StoreListMixin;	
+});
+
+},
+'dojox/mobile/_StoreMixin':function(){
+define([
+	"dojo/_base/Deferred",
+	"dojo/_base/declare"
+], function(Deferred, declare){
+
+	// module:
+	//		dojox/mobile/_StoreMixin
+
+	return declare("dojox.mobile._StoreMixin", null, {
+		// summary:
+		//		Mixin for widgets to enable dojo/store data store.
+		// description:
+		//		By mixing this class into a widget, it can get data through a
+		//		dojo/store data store. The widget must implement the following
+		//		methods to handle the retrieved data:
+		//
+		//		- onComplete(/*Array*/items), onError(/*Object*/errorData),
+		//		- onUpdate(/*Object*/item, /*Number*/insertedInto), and
+		//		- onDelete(/*Object*/item, /*Number*/removedFrom).
+	
+		// store: Object
+		//		Reference to data provider object used by this widget.
+		store: null,
+
+		// query: Object
+		//		A query that can be passed to 'store' to initially filter the items.
+		query: null,
+
+		// queryOptions: Object
+		//		An optional parameter for the query.
+		queryOptions: null,
+
+		// labelProperty: String
+		//		A property name (a property in the dojo/store item) that specifies that item's label.
+		labelProperty: "label",
+
+		// childrenProperty: String
+		//		A property name (a property in the dojo/store item) that specifies that item's children.
+		childrenProperty: "children",
+
+		setStore: function(/*dojo/store/api/Store*/store, /*String*/query, /*Object*/queryOptions){
+			// summary:
+			//		Sets the store to use with this widget.
+			if(store === this.store){ return null; }
+			if(store){
+				store.getValue = function(item, property){
+					return item[property];
+				};
+			}
+			this.store = store;
+			this._setQuery(query, queryOptions);
+			return this.refresh();
+		},
+
+		setQuery: function(/*String*/query, /*Object*/queryOptions){
+			this._setQuery(query, queryOptions);
+			return this.refresh();
+		},
+
+		_setQuery: function(/*String*/query, /*Object*/queryOptions){
+			// tags:
+			//		private
+			this.query = query;
+			this.queryOptions = queryOptions || this.queryOptions;
+		},
+
+		refresh: function(){
+			// summary:
+			//		Fetches the data and generates the list items.
+			if(!this.store){ return null; }
+			var _this = this;
+			var promise = this.store.query(this.query, this.queryOptions);
+			if(this._observe_h){
+				this._observe_h.remove();
+			}
+			Deferred.when(promise, function(results){
+				if(results.items){
+					results = results.items; // looks like dojo/data style items array
+				}
+				if(promise.observe){
+					_this._observe_h = promise.observe(function(object, previousIndex, newIndex){
+						if(previousIndex != -1){
+							if(newIndex != previousIndex){
+								// item removed or moved
+								_this.onDelete(object, previousIndex);
+								// TODO: support move, i.e. newIndex != -1?
+							}else{
+								// item modified
+								// if onAdd is not defined, we are "bug compatible" with 1.8 and we do nothing.
+								// TODO remove test in 2.0
+								if(_this.onAdd){
+									_this.onUpdate(object, newIndex);
+								}
+							}
+						}else if(newIndex != -1){
+							// item added
+							if(_this.onAdd){
+								 // new widget with onAdd method defined
+								_this.onAdd(object, newIndex);
+							}else{
+								// TODO remove in 2.0
+								// compatibility with 1.8: onAdd did not exist, add was handled by onUpdate
+								_this.onUpdate(object, newIndex);
+							}
+						}												
+					}, true); // we want to be notified of updates
+				}
+				_this.onComplete(results);
+			}, function(error){
+				_this.onError(error);
+			});
+			return promise;
+		}
+
+/*=====
+		// Subclass MUST implement the following methods.
+
+		, onComplete: function(items){
+			// summary:
+			//		A handler that is called after the fetch completes.
+		},
+
+		onError: function(errorData){
+			// summary:
+			//		An error handler.
+		},
+
+		onUpdate: function(item, insertedInto){
+			// summary:
+			//		Called when an existing data item has been modified in the store.
+			//		Note: for compatibility with previous versions where only onUpdate was present,
+			//		if onAdd is not defined, onUpdate will be called instead.
+		},
+
+		onDelete: function(item, removedFrom){
+			// summary:
+			//		Called when a data item has been removed from the store.
+		},
+		
+		// Subclass should implement the following methods.
+
+		onAdd: function(item, insertedInto){
+			// summary:
+			//		Called when a new data item has been added to the store.
+			//		Note: for compatibility with previous versions where this function did not exist,
+			//		if onAdd is not defined, onUpdate will be called instead.
+		}
+=====*/
+	});
+});
+
+},
 'dojo/i18n':function(){
 define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config", "./_base/lang", "./_base/xhr", "./json", "module"],
 	function(dojo, require, has, array, config, lang, xhr, json, module){
@@ -13951,10 +14412,11 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
 });
 
 },
-'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile\",\n        \"dojox/mobile/deviceTheme\",\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    /*\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"modelApp.names\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"params\": {\n                \"data\": \"modelApp.repeatData\"\n            }\n        }\n    },\n    */\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            //\"controller\": \"app/views/view1/view1_controller.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\"dojox/mobile/RoundRectList\",\"dojox/mobile/ListItem\"]\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojo/store/Observable\",\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile/common\",\n        \"dojox/mobile/deviceTheme\",\n        /* For build to include css3/lite query selectorEngine */\n        \"dojo/selector/lite\",\n        //Need to inlclude dependency for model stores across views\n        \"dojo/store/Memory\"\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            //\"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"myapp.dataItems\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/Memory\",\n            //\"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": [{\"label\":\"North Carolina\", \"rightText\":\"Raleigh\"},\n                         {\"label\":\"Virginia\",       \"rightText\":\"Richmond\"}\n                        ],\n                \"idProperty\":\"label\"\n            }\n        }\n    },\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\n                \"dojox/mobile/RoundRectList\",\n                \"dojox/mobile/ListItem\",\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\"\n            ],\n            \"stores\": {\n                \"store3\":{\n                    \"type\": \"dojo/store/Memory\",\n                    //\"observable\": true,\n                    \"params\": { // parameters used to initialize the data store\n                        \"data\": [{\"field\":\"name\",     \"value\":\"Carlos Santana\", \"art\":\"mblDomButtonCheck\"},\n                                 {\"field\":\"twitter\",  \"value\":\"@csantanapr\", \"art\":\"mblDomButtonRedBall\"}\n                                ],\n                        \"idProperty\":\"field\"\n                    }\n                }\n            },\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\"\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/resources/data/items.json':"{\n    \"identifier\": \"id\",\n    \"items\": [\n        {\n            \"id\": \"10001\",\n            \"label\": \"Dojo\",\n            \"rightText\": \"1.9.1\"\n        },\n        {\n            \"id\": \"10002\",\n            \"label\": \"JQuery\",\n            \"rightText\": \"1.10.2\"\n        }\n    ]\n}",
 'url:app/views/app.html':"<div>\n    <div class=\"navPane\" data-app-constraint=\"top\">\n        <select id=\"sel1\" onchange=\"(function changeTheme(){location.replace('?theme='+event.target.value);}())\"> \n            <option value=\"\">${nls.switch_theme}</option>\n            <option value=\"iPhone\">iPhone</option>\n            <option value=\"iPad\">iPad</option>\n            <option value=\"Android\">Android</option>\n            <option value=\"Holodark\">Holodark</option>\n            <option value=\"BlackBerry\">BlackBerry</option>\n            <option value=\"WindowsPhone\">WindowsPhone</option>\n            <option value=\"Custom\">${nls.custom}</option>\n\t    </select>\n        <br>\n        <div>${nls.app_template_title}</div>\n        <div>${nls.app_string}</div>\n    </div>\n\n</div>\n",
-'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n    <div>${nls.view1_template_title}</div>\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n    <div>${nls.view1_string}</div>\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n    </ul>\n\n</div>\n",
-'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back\n    </button>\n    \n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n</div>\n",
+'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n    <!-- Access View properties and nls strings without a View Controller -->\n    <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n    <div>$ {name} = ${name}</div>\n    <div>$ {template} = ${template}</div>\n    <div>$ {nls.app_string} = ${nls.app_string}</div>\n    <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n    <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n    -->\n    <div>$ {aNumber}  = ${aNumber}</div>\n    <div>$ {aString} = ${aString}</div>\n    <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n    <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n    <div>$ {aBoolean} = ${aBoolean}</div>\n    <div>$ {aNull} = ${aNull}</div>\n    <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n    <!-- Access A different locale -->\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n\n    <!-- Transition to a different view using ListItem 'startTransition' Event -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n    </ul>\n\n    <!-- Access functions on the View Controller -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n        <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\" data-dojo-props='clickable:true,noArrow:true'>\n        doSomething()\n        </li>\n    </ul>\n\n    <!-- View Controller will use id to attach an Event listener on button -->\n    <button id=\"doSomethingOnce\">\n     doSomething on.once\n    </button>\n    <input type=\"text\" />\n\n    <!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->\n    <div     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems3\"\n             data-dojo-props=\"store: this.loadedStores.store3,\n             itemMap:{field:'label', value:'rightText', art:'icon'}\">\n    </div>\n\n</div>\n",
+'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <button onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                'bubbles':true,\n                                                'cancelable':true,\n                                                'detail':   {\n                                                            target: 'view1',\n                                                            url: '#view1',\n                                                            transitionDir: -1\n                                                        }\n                                                }));\"\n    >\n    Back with raw js event.target.dispatchEvent()\n    </button>\n\n    <button onclick=\"App.transitionToView(event.target, {\n                                                            'target': 'view1',\n                                                            'url': '#view1',\n                                                            'transitionDir': -1\n                                                        }, event);\">\n    Back with App.transitionToView()\n    </button>\n\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n\n    <!-- Render Data from json data via dojo/store -->\n    <!-- Example loading data from .json file -->\n    <div     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems1\"\n             data-dojo-props=\"store: this.loadedStores.store1\">\n    </div>\n    <!-- Example loading data from static data in config.json -->\n    <div     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems2\"\n             data-dojo-props=\"store: this.loadedStores.store2\">\n    </div>\n\n\n</div>\n",
 '*now':function(r){r(['dojo/i18n!*preload*app/nls/main*["ar","ca","cs","da","de","el","en","en-gb","en-us","es","es-es","fi","fi-fi","fr","fr-fr","he","he-il","hu","it","it-it","ja","ja-jp","ko","ko-kr","nl","nl-nl","nb","pl","pt","pt-br","pt-pt","ru","sk","sl","sv","th","tr","zh","zh-tw","zh-cn","ROOT"]']);}
 }});
 /*global define, console*/
@@ -13981,36 +14443,33 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
  * <http://dojotoolkit.org/reference-guide/loader/amd.html>.
  */
 define([
+    'dojo/_base/window',
     'dojo/sniff',
     'require',
     'dojox/app/main',
     'dojox/json/ref',
     'dojo/text!app/config.json',
+    'dojo/text!app/resources/data/items.json',
     //TODO: add all html templates being use in config.json to force them to be included in layer
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
     'dojo/text!app/views/view1/view1.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
-], function (has, require, Application, json, config) {
+], function (win, has, require, Application, json, config, data) {
     'use strict';
-    /**
-     * This main.js file conditionally executes different code depending upon the host environment it is loaded in.
-     * This is an increasingly common pattern when dealing with applications that run in different environments that
-     * require different functionality (i.e. client/server or desktop/tablet/phone).
-     */
-    if ( 1 ) {
-        var myapp;
+    win.global.myapp = {};
 
-            // populate has flag on whether html5 history is correctly supported or not
-        has.add("html5history", !has("ie") || has("ie") > 9);
+    // populate has flag on whether html5 history is correctly supported or not
+    has.add("html5history", !has("ie") || has("ie") > 9);
 
-        myapp = new Application(json.fromJson(config));
+    //TODO: Just for debugging this enables built in logging
+    //has.add("app-log-api", true);
 
+    // setup the data for the memory stores
+    win.global.myapp.dataItems = json.fromJson(data);
 
+    //Start the App
+    win.global.myapp.App = new Application(json.fromJson(config));
 
-    } else {
-        // TODO: Eventually, the Boilerplate will actually have a useful server implementation here :)
-        console.log('Hello from the server!');
-    }
 });
