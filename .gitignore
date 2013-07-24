@@ -6,4 +6,5 @@ src/util
 README.md
 build.sh
 dist/*build*
+node_modules
 
