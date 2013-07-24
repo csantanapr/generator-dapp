@@ -45,14 +45,14 @@
     "stores": {
         "store1":{
             "type": "dojo/store/Memory",
-            //"observable": true,
+            "observable": true,
             "params": { // parameters used to initialize the data store
                 "data": "myapp.dataItems"
             }
         },
         "store2":{
             "type": "dojo/store/Memory",
-            //"observable": true,
+            "observable": true,
             "params": { // parameters used to initialize the data store
                 "data": [{"label":"North Carolina", "rightText":"Raleigh"},
                          {"label":"Virginia",       "rightText":"Richmond"}
@@ -101,7 +101,7 @@
             "stores": {
                 "store3":{
                     "type": "dojo/store/Memory",
-                    //"observable": true,
+                    "observable": true,
                     "params": { // parameters used to initialize the data store
                         "data": [{"field":"name",     "value":"Carlos Santana", "art":"mblDomButtonCheck"},
                                  {"field":"twitter",  "value":"@csantanapr", "art":"mblDomButtonRedBall"}
