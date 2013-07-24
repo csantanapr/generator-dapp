@@ -85,7 +85,6 @@
             //  beforeDeactivate
             //  afterDeactivate
             //  destroy
-            //Optional controller
             "controller": "app/views/view1/view1Ctrl.js",
             //Optional, overwrites the transition type only for this view
             "transition": "slide",
@@ -97,7 +96,19 @@
                 "dojox/mobile/ListItem",
                 "dojox/mobile/Button",
                 "dojox/mobile/RoundRectStoreList"
-                ]
+            ],
+            "stores": {
+                "store3":{
+                    "type": "dojo/store/Memory",
+                    //"observable": true,
+                    "params": { // parameters used to initialize the data store
+                        "data": [{"field":"name",     "value":"Carlos Santana", "art":"mblDomButtonCheck"},
+                                 {"field":"twitter",  "value":"@csantanapr", "art":"mblDomButtonRedBall"}
+                                ],
+                        "idProperty":"field"
+                    }
+                }
+            },
         },
         "view2":{
             //Mandatory for defaultViews

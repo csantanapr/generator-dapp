@@ -47,4 +47,12 @@
      doSomething on.once
     </button>
     <input type="text" />
+
+    <!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->
+    <div     data-dojo-type="dojox/mobile/RoundRectStoreList"
+             data-dojo-attach-point="dataItems3"
+             data-dojo-props="store: this.loadedStores.store3,
+             itemMap:{field:'label', value:'rightText', art:'icon'}">
+    </div>
+
 </div>

@@ -3,13 +3,13 @@
     "items": [
         {
             "id": "10001",
-            "label": "Foo",
-            "rightText": "1.0"
+            "label": "Dojo",
+            "rightText": "1.9.1"
         },
         {
             "id": "10002",
-            "label": "Bar",
-            "rightText": "2.0"
+            "label": "JQuery",
+            "rightText": "1.10.2"
         }
     ]
 }
