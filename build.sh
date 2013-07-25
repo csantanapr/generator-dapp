@@ -36,10 +36,6 @@ fi
 
 echo "Building application with $PROFILE to $TMP_BUILD_DIR."
 
-echo -n "Cleaning old files..."
-rm -rf "$DIST_DIR"
-echo " Done"
-
 cd "$TOOLSDIR"
 
 if which node >/dev/null; then
