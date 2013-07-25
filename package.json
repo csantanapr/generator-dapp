@@ -6,7 +6,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "server": "node server"
+    "server": "open http://localhost:4000 && node server",
+    "start": "sh build.sh"
   },
   "repository": {
     "type": "git",
