@@ -1,5 +1,5 @@
 define('app/nls/main_es',{
-'app/nls/app_strings':{"app_string":"Este texto es al nivel de la Aplicación en el archivo app/nls/es/app_strings.js","app_template_title":"Plantilla al nivel de Aplicación","locale_link":"?locale=en-us","switch_theme":"Cambia Estilo","custom":"Personalizado"}
+'app/nls/app_strings':{"app_string":"Texto app_strings.js","app_template_title":"Plantilla Aplicación","locale_msg":"Cambiar lenguage:","locale_link":"?locale=en-us","go_to":"Ir a","view":"Vista","doSomething":"hacer algo","once":"una vez","email":"Correo electrónico","nodejs":"NodeJS","mongodb":"MongoDB","switch_theme":"Cambia Estilo","custom":"Personalizado","back_dispatchEvent":"<--- Regresar dispatchEvent()","back_transitionToView":"<--- Regresar transitionToView()"}
 ,
-'app/views/view1/nls/view1_strings':{"view1_string":"Este texto es al nivel de la Pagina/Vista en el archivo nls app/views/view1/nls/es/view1_string.js","view1_template_title":"Plantilla al nivel de la Vista","view1_hello":"Hola JavaScript eres Impresionante !"}
+'app/views/view1/nls/view1_strings':{"view1_string":"Texto view1_string.js","view1_template_title":"Plantilla Vista","view1_hello":"JavaScript es Impresionante !"}
 });

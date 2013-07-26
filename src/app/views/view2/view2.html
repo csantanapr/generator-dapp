@@ -1,43 +1,41 @@
 <div class="view view2">
-    <div>
-        <button data-dojo-type="dojox/mobile/Button" onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
-                                                    'bubbles':true,
-                                                    'cancelable':true,
-                                                    'detail':   {
-                                                                target: 'view1',
-                                                                url: '#view1',
-                                                                transitionDir: -1
-                                                            }
-                                                    }));"
-        >
-        &lt;--- Back with raw js event.target.dispatchEvent()
-        </button>
-    </div>
-    <div>
-        <button data-dojo-type="dojox/mobile/Button" onclick="App.transitionToView(event.target, {
-                                                                'target': 'view1',
-                                                                'url': '#view1',
-                                                                'transitionDir': -1
-                                                            }, event);">
-        &lt;--- Back with App.transitionToView()
-        </button>
-    </div>
+  <div>
+    <button data-dojo-type="dojox/mobile/Button" onclick="event.target.dispatchEvent(new CustomEvent('startTransition', {
+    'bubbles':true,
+    'cancelable':true,
+    'detail':   {
+    target: 'view1',
+    url: '#view1',
+    transitionDir: -1
+  }
+}));"
+>${nls.back_dispatchEvent}
+</button>
+</div>
+<div>
+  <button data-dojo-type="dojox/mobile/Button" onclick="App.transitionToView(event.target, {
+  'target': 'view1',
+  'url': '#view1',
+  'transitionDir': -1
+}, event);">${nls.back_transitionToView}
+</button>
+</div>
 
-    <div>${name}</div>
-    <div>${template}</div>
-    <div>${nls.app_string}</div>
+<div>${name}</div>
+<div>${template}</div>
+<div>${nls.app_string}</div>
 
-    <!-- Render Data from json data via dojo/store -->
-    <!-- Example loading data from .json file -->
-    <ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
-             data-dojo-attach-point="dataItems1"
-             data-dojo-props="store: this.loadedStores.store1">
-    </ul>
-    <!-- Example loading data from static data in config.json -->
-    <ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
-             data-dojo-attach-point="dataItems2"
-             data-dojo-props="store: this.loadedStores.store2">
-    </ul>
+<!-- Render Data from json data via dojo/store -->
+<!-- Example loading data from .json file -->
+<ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
+data-dojo-attach-point="dataItems1"
+data-dojo-props="store: this.loadedStores.store1">
+</ul>
+<!-- Example loading data from static data in config.json -->
+<ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
+data-dojo-attach-point="dataItems2"
+data-dojo-props="store: this.loadedStores.store2">
+</ul>
 
 
 </div>

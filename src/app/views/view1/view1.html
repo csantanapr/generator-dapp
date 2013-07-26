@@ -25,12 +25,12 @@
   <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>
 
   <!-- Access A different locale -->
-  <a href="${nls.locale_link}"> Click to change locale: ${nls.locale_link}</a>
+  <a href="${nls.locale_link}"> ${nls.locale_msg} ${nls.locale_link}</a>
 
   <!-- Transition to a different view using ListItem 'startTransition' Event -->
   <ul data-dojo-type="dojox/mobile/RoundRectList">
     <li data-dojo-type="dojox/mobile/ListItem" data-dojo-props="clickable:true,target:'view2',url:'#view2'">
-      Go to View 2
+      ${nls.go_to} ${nls.view} 2
     </li>
   </ul>
 
@@ -38,11 +38,11 @@
   <ul data-dojo-type="dojox/mobile/RoundRectList">
     <!-- Run function from View Controller by assigning ListItem onClick to a function -->
     <li data-dojo-type="dojox/mobile/Button" data-dojo-attach-event="onClick:doSomething">
-      doSomething()
+      ${nls.doSomething}
     </li>
     <!-- View Controller will use id to attach an Event listener on this button -->
     <li data-dojo-type="dojox/mobile/Button" id="doSomethingOnce" >
-      doSomething on.once()
+      ${nls.doSomething} ${nls.once}
     </li>
     <li>
       <!-- View Controller will use to display output from doSomething() -->
@@ -57,14 +57,14 @@ data-dojo-props="store: this.loadedStores.store3,
 itemMap:{field:'label', value:'rightText', art:'icon'}">
 </ul>
 
-<h2 data-dojo-type="dojox/mobile/RoundRectCategory">Email</h2>
+<h2 data-dojo-type="dojox/mobile/RoundRectCategory">${nls.email}</h2>
 <ul data-dojo-type="dojox/mobile/RoundRectStoreList"
 data-dojo-attach-point="restItems1"
 data-dojo-props="store: this.loadedStores.jsonStore,
 itemMap:{name:'label', count:'rightText'}">
 </ul>
 
-<h2 data-dojo-type="dojox/mobile/RoundRectCategory">NodeJS-MongoDB</h2>
+<h2 data-dojo-type="dojox/mobile/RoundRectCategory">${nls.nodejs}-${nls.mongodb}</h2>
 <ul data-dojo-type="dojox/mobile/RoundRectStoreList"
 data-dojo-attach-point="restItems2"
 data-dojo-props="store: this.loadedStores.mongodbStore,

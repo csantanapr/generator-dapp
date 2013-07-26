@@ -81,7 +81,7 @@ define([
 
         // JavaScript Primitives
         'aNumber'    : 42,
-        'aString'    : 'Normal String',
+        'aString'    : 'JavaScript',
         'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
         'aBoolean'   : true,
         'aNull'      : null,

@@ -8,6 +8,7 @@ var express = require("express");
 var service = require("./server/service");
 
 var app = express();
+var port = 3000;
 
 app.configure(function () {
     'use strict';
@@ -21,8 +22,8 @@ app.post("/items", service.add);
 app.put("/items/:id", service.put);
 app.delete("/items/:id", service.remove);
 
-http.createServer(app).listen(3000, function () {
+http.createServer(app).listen(port, function () {
     'use strict';
-    console.log("Express server listening");
+    console.log("Express server listening on http://localhost:+" + port);
 });
 

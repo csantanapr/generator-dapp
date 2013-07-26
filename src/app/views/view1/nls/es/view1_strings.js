@@ -1,6 +1,6 @@
 /*global define*/
 define({
-    view1_string: 'Este texto es al nivel de la Pagina/Vista en el archivo nls app/views/view1/nls/es/view1_string.js',
-    view1_template_title: 'Plantilla al nivel de la Vista',
-    view1_hello: 'Hola JavaScript eres Impresionante !'
+    view1_string: 'Texto view1_string.js',
+    view1_template_title: 'Plantilla Vista',
+    view1_hello: 'JavaScript es Impresionante !'
 });
