@@ -13,9 +13,9 @@ Quick Start
 
 1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git`
 2. Develop your project in `src/app/` using html,css,js until it is amazing.
-3. Run `build.sh`, which will create an awesome optimized builds `dist/www`.
-4. Upload `dist/www` to a website or create an Hybrid Mobile App with [Apache Cordova/PhoneGap](http://cordova.io)
-5. Happiness, and stop crying because you can't figure out how to build dojo
+3. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
+4. Run `.cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
+5. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
 
 ### Windows Users
 
