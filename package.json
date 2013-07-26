@@ -7,8 +7,10 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "open http://localhost:4000 && node server",
-    "build": "sh build.sh",
-    "mongodb": "mongodb"
+    "build": "bash build.sh",
+    "mongodb": "mongodb",
+    "server": "node server",
+    "cordova": "bash cordova.sh"
   },
   "repository": {
     "type": "git",
@@ -36,7 +38,7 @@
   ],
   "readmeFilename": "README.md",
   "devDependencies": {
-    "connect": "~2.8.4"
+    "cordova": "~3.x.x"
   },
   "dependencies": {
     "express": "3.x",
