@@ -1,4 +1,4 @@
-Build started: Thu Jul 25 2013 17:35:49 GMT-0400 (EDT)
+Build started: Fri Jul 26 2013 00:28:14 GMT-0400 (EDT)
 Build application version: 1.7.0dev (23930)
 Messages:
 info(100) Assumed module uses legacy loader API.
@@ -1336,6 +1336,7 @@ app/main:
 	dojo/store/Memory
 	dojo/store/util/QueryResults
 	dojo/store/util/SimpleQueryEngine
+	dojo/store/JsonRest
 	dojox/app/controllers/Load
 	dojox/app/controllers/Transition
 	dojox/app/controllers/Layout
@@ -1379,6 +1380,7 @@ app/main:
 	dojox/mobile/TextBox
 	dijit/form/_FormValueMixin
 	dijit/form/_TextBoxMixin
+	dojox/mobile/RoundRectCategory
 	dojo/i18n
 
 
@@ -1386,4 +1388,4 @@ app/main:
 Process finished normally
 	errors: 0
 	warnings: 54
-	build time: 9.377 seconds
+	build time: 10.275 seconds

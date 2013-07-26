@@ -1,0 +1,32 @@
+[
+    {
+        "id" : "1",
+        "name": "Inbox",
+        "count": "2",
+    },
+    {
+        "id" : "2",
+        "name": "Starred",
+        "count": "3",
+    },
+    {
+        "id" : "3",
+        "name": "Important",
+        "count": "5",
+    },
+    {
+        "id" : "4",
+        "name": "Drafts",
+        "count": "7",
+    },
+    {
+        "id" : "5",
+        "name": "Promotions",
+        "count": "11",
+    },
+    {
+        "id" : "1",
+        "name": "Social",
+        "count": "13",
+    },
+]
