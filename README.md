@@ -1,7 +1,7 @@
 A Starter Kit for Single Page Apps
 ===
 
-- The DApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework.
+- The dApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework.
 - It illustrates some basic best practices when working with Single Web Page Apps.
 - Helps you build your App which is some time the most difficult of working with
 - The Single Page App is built to be use on creating a Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
@@ -16,6 +16,8 @@ Quick Start
 3. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
 4. Run `.cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
 5. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
+6. (Optional) Run nodejs rest service with mongodb `mongod` and `node server`
+
 
 ### Windows Users
 
