@@ -7,4 +7,5 @@ README.md
 build.sh
 dist/*build*
 node_modules
+dist/cordova
 
