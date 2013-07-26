@@ -9,8 +9,8 @@
     "start": "open http://localhost:4000 && node server",
     "build": "bash build.sh",
     "mongodb": "mongodb",
-    "server": "node server",
-    "cordova": "bash cordova.sh"
+    "service": "node server",
+    "cordova": "bash build.sh && bash cordova.sh"
   },
   "repository": {
     "type": "git",
