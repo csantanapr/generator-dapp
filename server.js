@@ -1,11 +1,28 @@
-/*jslint nomen: true */
+/*jslint es5: true nomen: true */
 /*jshint nomen: true */
-/*global _, require, __dirname */
-var util = require('util'),
-    connect = require('connect'),
-    port = 4000;
+/*global _, require, __dirname, console */
 
-connect.createServer(connect['static'](__dirname + '/dist/www')).listen(port);
-util.puts('Listening on ' + port + '...');
-util.puts('Press Ctrl + C to stop.');
+var http = require("http");
+var path = require("path");
+var express = require("express");
+var service = require("./server/service");
+
+var app = express();
+
+app.configure(function () {
+    'use strict';
+    app.use(express.bodyParser());
+    app.use(express.static(path.join(__dirname, 'dist/www')));
+});
+
+app.get("/items", service.fetch);
+app.get("/items/:id", service.get);
+app.post("/items", service.add);
+app.put("/items/:id", service.put);
+app.delete("/items/:id", service.remove);
+
+http.createServer(app).listen(3000, function () {
+    'use strict';
+    console.log("Express server listening");
+});
 

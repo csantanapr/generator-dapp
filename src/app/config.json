@@ -69,6 +69,13 @@
                 "target": "app/resources/data/rest/items.json"
             }
         },
+        "mongodbStore":{
+            "type": "dojo/store/JsonRest",
+            "observable": true,
+            "params": {
+                "target": "http://localhost:3000/items"
+            }
+        }
     },
 
     //Optional
