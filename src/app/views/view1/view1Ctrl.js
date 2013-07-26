@@ -15,6 +15,7 @@ define([
     'use strict';
 
     var handles,
+        view,
         viewNode,
         count = 0,
         DataListItem = declare(ListItem, {
@@ -33,6 +34,7 @@ define([
 
             //save the view node in clousure to use as scope for dom manipulatation and query
             viewNode = this.domNode;
+            view = this;
 
         },
 
@@ -54,7 +56,7 @@ define([
             count = 0;
 
             //Use jquery syntax here .val() and .sytle() depends on loading dojo/NodeList-manipulate
-            $('input[type="text"]', viewNode).val("iddle").style("color", "red");
+            $('input[type="text"]', viewNode).val(this.nls.idle).style("color", "red");
 
         },
 
@@ -82,7 +84,7 @@ define([
         // JavaScript Primitives
         'aNumber'    : 42,
         'aString'    : 'JavaScript',
-        'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
+        'aStringScapedQuotes'    : '<a href="index.html#view2" target="_blank">index.html#view2</a>',
         'aBoolean'   : true,
         'aNull'      : null,
 
@@ -103,7 +105,7 @@ define([
             console.log('did something');
             // TIP: Always scope your query selector to the View using viewNode
             //Use jquery syntax here .val() and .sytle() depends on loading dojo/NodeList-manipulate
-            $('input[type="text"]', viewNode).val("did something " + count);
+            $('input[type="text"]', viewNode).val(" " + view.nls.doSomething + ":" + count);
             count = count + 1;
         }
     };
