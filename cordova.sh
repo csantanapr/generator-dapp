@@ -54,6 +54,8 @@ cordova serve ios
 #cordova run ios
 #cordova run android
 
+echo "To Run on Simulator or Device edit cordova.sh"
+
 
 
 
