@@ -4451,6 +4451,206 @@ return function(query, options){
 });
 
 },
+'dojo/store/JsonRest':function(){
+define(["../_base/xhr", "../_base/lang", "../json", "../_base/declare", "./util/QueryResults" /*=====, "./api/Store" =====*/
+], function(xhr, lang, JSON, declare, QueryResults /*=====, Store =====*/){
+
+// No base class, but for purposes of documentation, the base class is dojo/store/api/Store
+var base = null;
+/*===== base = Store; =====*/
+
+/*=====
+var __HeaderOptions = {
+		// headers: Object?
+		//		Additional headers to send along with the request.
+	},
+	__PutDirectives = declare(Store.PutDirectives, __HeaderOptions),
+	__QueryOptions = declare(Store.QueryOptions, __HeaderOptions);
+=====*/
+
+return declare("dojo.store.JsonRest", base, {
+	// summary:
+	//		This is a basic store for RESTful communicating with a server through JSON
+	//		formatted data. It implements dojo/store/api/Store.
+
+	constructor: function(options){
+		// summary:
+		//		This is a basic store for RESTful communicating with a server through JSON
+		//		formatted data.
+		// options: dojo/store/JsonRest
+		//		This provides any configuration information that will be mixed into the store
+		this.headers = {};
+		declare.safeMixin(this, options);
+	},
+
+	// headers: Object
+	//		Additional headers to pass in all requests to the server. These can be overridden
+	//		by passing additional headers to calls to the store.
+	headers: {},
+
+	// target: String
+	//		The target base URL to use for all requests to the server. This string will be
+	//		prepended to the id to generate the URL (relative or absolute) for requests
+	//		sent to the server
+	target: "",
+
+	// idProperty: String
+	//		Indicates the property to use as the identity property. The values of this
+	//		property should be unique.
+	idProperty: "id",
+
+	// sortParam: String
+	//		The query parameter to used for holding sort information. If this is omitted, than
+	//		the sort information is included in a functional query token to avoid colliding
+	//		with the set of name/value pairs.
+
+	// ascendingPrefix: String
+	//		The prefix to apply to sort attribute names that are ascending
+	ascendingPrefix: "+",
+
+	// descendingPrefix: String
+	//		The prefix to apply to sort attribute names that are ascending
+	descendingPrefix: "-",
+	 
+
+	get: function(id, options){
+		// summary:
+		//		Retrieves an object by its identity. This will trigger a GET request to the server using
+		//		the url `this.target + id`.
+		// id: Number
+		//		The identity to use to lookup the object
+		// options: Object?
+		//		HTTP headers. For consistency with other methods, if a `headers` key exists on this object, it will be
+		//		used to provide HTTP headers instead.
+		// returns: Object
+		//		The object in the store that matches the given id.
+		options = options || {};
+		var headers = lang.mixin({ Accept: this.accepts }, this.headers, options.headers || options);
+		return xhr("GET", {
+			url: this.target + id,
+			handleAs: "json",
+			headers: headers
+		});
+	},
+
+	// accepts: String
+	//		Defines the Accept header to use on HTTP requests
+	accepts: "application/javascript, application/json",
+
+	getIdentity: function(object){
+		// summary:
+		//		Returns an object's identity
+		// object: Object
+		//		The object to get the identity from
+		// returns: Number
+		return object[this.idProperty];
+	},
+
+	put: function(object, options){
+		// summary:
+		//		Stores an object. This will trigger a PUT request to the server
+		//		if the object has an id, otherwise it will trigger a POST request.
+		// object: Object
+		//		The object to store.
+		// options: __PutDirectives?
+		//		Additional metadata for storing the data.  Includes an "id"
+		//		property if a specific id is to be used.
+		// returns: dojo/_base/Deferred
+		options = options || {};
+		var id = ("id" in options) ? options.id : this.getIdentity(object);
+		var hasId = typeof id != "undefined";
+		return xhr(hasId && !options.incremental ? "PUT" : "POST", {
+				url: hasId ? this.target + id : this.target,
+				postData: JSON.stringify(object),
+				handleAs: "json",
+				headers: lang.mixin({
+					"Content-Type": "application/json",
+					Accept: this.accepts,
+					"If-Match": options.overwrite === true ? "*" : null,
+					"If-None-Match": options.overwrite === false ? "*" : null
+				}, this.headers, options.headers)
+			});
+	},
+
+	add: function(object, options){
+		// summary:
+		//		Adds an object. This will trigger a PUT request to the server
+		//		if the object has an id, otherwise it will trigger a POST request.
+		// object: Object
+		//		The object to store.
+		// options: __PutDirectives?
+		//		Additional metadata for storing the data.  Includes an "id"
+		//		property if a specific id is to be used.
+		options = options || {};
+		options.overwrite = false;
+		return this.put(object, options);
+	},
+
+	remove: function(id, options){
+		// summary:
+		//		Deletes an object by its identity. This will trigger a DELETE request to the server.
+		// id: Number
+		//		The identity to use to delete the object
+		// options: __HeaderOptions?
+		//		HTTP headers.
+		options = options || {};
+		return xhr("DELETE", {
+			url: this.target + id,
+			headers: lang.mixin({}, this.headers, options.headers)
+		});
+	},
+
+	query: function(query, options){
+		// summary:
+		//		Queries the store for objects. This will trigger a GET request to the server, with the
+		//		query added as a query string.
+		// query: Object
+		//		The query to use for retrieving objects from the store.
+		// options: __QueryOptions?
+		//		The optional arguments to apply to the resultset.
+		// returns: dojo/store/api/Store.QueryResults
+		//		The results of the query, extended with iterative methods.
+		options = options || {};
+
+		var headers = lang.mixin({ Accept: this.accepts }, this.headers, options.headers);
+
+		if(options.start >= 0 || options.count >= 0){
+			headers.Range = headers["X-Range"] //set X-Range for Opera since it blocks "Range" header
+				 = "items=" + (options.start || '0') + '-' +
+				(("count" in options && options.count != Infinity) ?
+					(options.count + (options.start || 0) - 1) : '');
+		}
+		var hasQuestionMark = this.target.indexOf("?") > -1;
+		if(query && typeof query == "object"){
+			query = xhr.objectToQuery(query);
+			query = query ? (hasQuestionMark ? "&" : "?") + query: "";
+		}
+		if(options && options.sort){
+			var sortParam = this.sortParam;
+			query += (query || hasQuestionMark ? "&" : "?") + (sortParam ? sortParam + '=' : "sort(");
+			for(var i = 0; i<options.sort.length; i++){
+				var sort = options.sort[i];
+				query += (i > 0 ? "," : "") + (sort.descending ? this.descendingPrefix : this.ascendingPrefix) + encodeURIComponent(sort.attribute);
+			}
+			if(!sortParam){
+				query += ")";
+			}
+		}
+		var results = xhr("GET", {
+			url: this.target + (query || ""),
+			handleAs: "json",
+			headers: headers
+		});
+		results.total = results.then(function(){
+			var range = results.ioArgs.xhr.getResponseHeader("Content-Range");
+			return range && (range = range.match(/\/(.*)/)) && +range[1];
+		});
+		return QueryResults(results);
+	}
+});
+
+});
+},
 'dojox/app/controllers/Load':function(){
 define(["require", "dojo/_base/lang", "dojo/_base/declare", "dojo/on", "dojo/Deferred", "dojo/when", "../Controller"],
 	function(require, lang, declare, on, Deferred, when, Controller, View){
@@ -14487,6 +14687,62 @@ define([
 });
 
 },
+'dojox/mobile/RoundRectCategory':function(){
+define([
+	"dojo/_base/declare",
+	"dojo/_base/window",
+	"dojo/dom-construct",
+	"dijit/_Contained",
+	"dijit/_WidgetBase",
+	"dojo/has",
+	"dojo/has!dojo-bidi?dojox/mobile/bidi/RoundRectCategory"
+], function(declare, win, domConstruct, Contained, WidgetBase, has, BidiRoundRectCategory){
+
+	// module:
+	//		dojox/mobile/RoundRectCategory
+
+	var RoundRectCategory = declare(has("dojo-bidi") ? "dojox.mobile.NonBidiRoundRectCategory" : "dojox.mobile.RoundRectCategory", [WidgetBase, Contained], {
+		// summary:
+		//		A category header for a rounded rectangle list.
+
+		// label: String
+		//		A label of the category. If the label is not specified,
+		//		innerHTML is used as a label.
+		label: "",
+
+		// tag: String
+		//		A name of html tag to create as domNode.
+		tag: "h2",
+
+		/* internal properties */	
+		
+		// baseClass: String
+		//		The name of the CSS class of this widget.
+		baseClass: "mblRoundRectCategory",
+
+		buildRendering: function(){
+			var domNode = this.domNode = this.containerNode = this.srcNodeRef || domConstruct.create(this.tag);
+			this.inherited(arguments);
+			if(!this.label && domNode.childNodes.length === 1 && domNode.firstChild.nodeType === 3){
+				// if it has only one text node, regard it as a label
+				this.label = domNode.firstChild.nodeValue;
+			}
+		},
+
+		_setLabelAttr: function(/*String*/label){
+			// summary:
+			//		Sets the category header text.
+			// tags:
+			//		private
+			this.label = label;
+			this.domNode.innerHTML = this._cv ? this._cv(label) : label;
+		}
+	});
+
+	return has("dojo-bidi") ? declare("dojox.mobile.RoundRectCategory", [RoundRectCategory, BidiRoundRectCategory]) : RoundRectCategory;	
+});
+
+},
 'dojo/i18n':function(){
 define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config", "./_base/lang", "./_base/xhr", "./json", "module"],
 	function(dojo, require, has, array, config, lang, xhr, json, module){
@@ -15043,10 +15299,10 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
 });
 
 },
-'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojo/store/Observable\",\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile/common\",\n        \"dojox/mobile/deviceTheme\",\n        /* For build to include css3/lite query selectorEngine */\n        \"dojo/selector/lite\",\n        //Need to inlclude dependency for model stores across views\n        \"dojo/store/Memory\"\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"myapp.dataItems\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": [{\"label\":\"North Carolina\", \"rightText\":\"Raleigh\"},\n                         {\"label\":\"Virginia\",       \"rightText\":\"Richmond\"}\n                        ],\n                \"idProperty\":\"label\"\n            }\n        }\n    },\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\n                \"dojox/mobile/RoundRectList\",\n                \"dojox/mobile/ListItem\",\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\",\n                \"dojox/mobile/TextBox\"\n            ],\n            \"stores\": {\n                \"store3\":{\n                    \"type\": \"dojo/store/Memory\",\n                    \"observable\": true,\n                    \"params\": { // parameters used to initialize the data store\n                        \"data\": [{\"field\":\"name\",     \"value\":\"Carlos Santana\", \"art\":\"mblDomButtonCheck\"},\n                                 {\"field\":\"twitter\",  \"value\":\"@csantanapr\", \"art\":\"mblDomButtonRedBall\"}\n                                ],\n                        \"idProperty\":\"field\"\n                    }\n                }\n            },\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\",\n             \"dependencies\":[\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\"\n            ]\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojo/store/Observable\",\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile/common\",\n        \"dojox/mobile/deviceTheme\",\n        /* For build to include css3/lite query selectorEngine */\n        \"dojo/selector/lite\",\n        //Need to inlclude dependency for model stores across views\n        \"dojo/store/Memory\",\n        \"dojo/store/JsonRest\"\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"myapp.dataItems\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": [{\"label\":\"North Carolina\", \"rightText\":\"Raleigh\"},\n                         {\"label\":\"Virginia\",       \"rightText\":\"Richmond\"}\n                        ],\n                \"idProperty\":\"label\"\n            }\n        },\n        \"jsonStore\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"observable\": true,\n            \"params\": {\n                \"target\": \"app/resources/data/rest/items.json\"\n            }\n        },\n    },\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\n                \"dojox/mobile/RoundRectList\",\n                \"dojox/mobile/ListItem\",\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\",\n                \"dojox/mobile/TextBox\",\n                \"dojox/mobile/RoundRectCategory\"\n            ],\n            \"stores\": {\n                \"store3\":{\n                    \"type\": \"dojo/store/Memory\",\n                    \"observable\": true,\n                    \"params\": { // parameters used to initialize the data store\n                        \"data\": [{\"field\":\"name\",     \"value\":\"Carlos Santana\", \"art\":\"mblDomButtonCheck\"},\n                                 {\"field\":\"twitter\",  \"value\":\"@csantanapr\", \"art\":\"mblDomButtonRedBall\"}\n                                ],\n                        \"idProperty\":\"field\"\n                    }\n                }\n            },\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\",\n             \"dependencies\":[\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\"\n            ]\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
 'url:app/resources/data/items.json':"{\n    \"identifier\": \"id\",\n    \"items\": [\n        {\n            \"id\": \"10001\",\n            \"label\": \"Dojo\",\n            \"rightText\": \"1.9.1\"\n        },\n        {\n            \"id\": \"10002\",\n            \"label\": \"JQuery\",\n            \"rightText\": \"1.10.2\"\n        }\n    ]\n}",
 'url:app/views/app.html':"<div>\n    <div class=\"navPane\" data-app-constraint=\"top\">\n        <select id=\"sel1\" onchange=\"(function changeTheme(){location.replace('?theme='+event.target.value);}())\"> \n            <option value=\"\">${nls.switch_theme}</option>\n            <option value=\"iPhone\">iPhone</option>\n            <option value=\"iPad\">iPad</option>\n            <option value=\"Android\">Android</option>\n            <option value=\"Holodark\">Holodark</option>\n            <option value=\"BlackBerry\">BlackBerry</option>\n            <option value=\"WindowsPhone\">WindowsPhone</option>\n            <option value=\"Custom\">${nls.custom}</option>\n\t    </select>\n        <br>\n        <div>${nls.app_template_title}</div>\n        <div>${nls.app_string}</div>\n    </div>\n\n</div>\n",
-'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n    <!-- Access View properties and nls strings without a View Controller -->\n    <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n    <div>$ {name} = ${name}</div>\n    <div>$ {template} = ${template}</div>\n    <div>$ {nls.app_string} = ${nls.app_string}</div>\n    <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n    <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n    -->\n    <div>$ {aNumber}  = ${aNumber}</div>\n    <div>$ {aString} = ${aString}</div>\n    <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n    <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n    <div>$ {aBoolean} = ${aBoolean}</div>\n    <div>$ {aNull} = ${aNull}</div>\n    <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n    <!-- Access A different locale -->\n    <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n\n    <!-- Transition to a different view using ListItem 'startTransition' Event -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n            Go to View 2\n        </li>\n    </ul>\n\n    <!-- Access functions on the View Controller -->\n    <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n        <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n        <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\">\n        doSomething()\n        </li>\n        <!-- View Controller will use id to attach an Event listener on this button -->\n        <li data-dojo-type=\"dojox/mobile/Button\" id=\"doSomethingOnce\" >\n        doSomething on.once()\n        </li>\n        <li>\n            <!-- View Controller will use to display output from doSomething() -->\n            <input data-dojo-type=\"dojox/mobile/TextBox\" type=\"text\" >\n            </input>\n        </li>\n    </ul>\n    <!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->\n    <ul     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems3\"\n             data-dojo-props=\"store: this.loadedStores.store3,\n             itemMap:{field:'label', value:'rightText', art:'icon'}\">\n    </ul>\n\n</div>\n",
+'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n  <!-- Access View properties and nls strings without a View Controller -->\n  <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n  <div>$ {name} = ${name}</div>\n  <div>$ {template} = ${template}</div>\n  <div>$ {nls.app_string} = ${nls.app_string}</div>\n  <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n  <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n  -->\n  <div>$ {aNumber}  = ${aNumber}</div>\n  <div>$ {aString} = ${aString}</div>\n  <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n  <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n  <div>$ {aBoolean} = ${aBoolean}</div>\n  <div>$ {aNull} = ${aNull}</div>\n  <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n  <!-- Access A different locale -->\n  <a href=\"${nls.locale_link}\"> Click to change locale: ${nls.locale_link}</a>\n\n  <!-- Transition to a different view using ListItem 'startTransition' Event -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n      Go to View 2\n    </li>\n  </ul>\n\n  <!-- Access functions on the View Controller -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n    <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\">\n      doSomething()\n    </li>\n    <!-- View Controller will use id to attach an Event listener on this button -->\n    <li data-dojo-type=\"dojox/mobile/Button\" id=\"doSomethingOnce\" >\n      doSomething on.once()\n    </li>\n    <li>\n      <!-- View Controller will use to display output from doSomething() -->\n      <input data-dojo-type=\"dojox/mobile/TextBox\" type=\"text\" >\n    </input>\n  </li>\n</ul>\n<!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"dataItems3\"\ndata-dojo-props=\"store: this.loadedStores.store3,\nitemMap:{field:'label', value:'rightText', art:'icon'}\">\n</ul>\n\n<h2 data-dojo-type=\"dojox/mobile/RoundRectCategory\">Email</h2>\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"restItems1\"\ndata-dojo-props=\"store: this.loadedStores.jsonStore,\nitemMap:{name:'label', count:'rightText'}\">\n</ul>\n\n</div>\n",
 'url:app/views/view2/view2.html':"<div class=\"view view2\">\n    <div>\n        <button data-dojo-type=\"dojox/mobile/Button\" onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n                                                    'bubbles':true,\n                                                    'cancelable':true,\n                                                    'detail':   {\n                                                                target: 'view1',\n                                                                url: '#view1',\n                                                                transitionDir: -1\n                                                            }\n                                                    }));\"\n        >\n        &lt;--- Back with raw js event.target.dispatchEvent()\n        </button>\n    </div>\n    <div>\n        <button data-dojo-type=\"dojox/mobile/Button\" onclick=\"App.transitionToView(event.target, {\n                                                                'target': 'view1',\n                                                                'url': '#view1',\n                                                                'transitionDir': -1\n                                                            }, event);\">\n        &lt;--- Back with App.transitionToView()\n        </button>\n    </div>\n\n    <div>${name}</div>\n    <div>${template}</div>\n    <div>${nls.app_string}</div>\n\n    <!-- Render Data from json data via dojo/store -->\n    <!-- Example loading data from .json file -->\n    <ul     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems1\"\n             data-dojo-props=\"store: this.loadedStores.store1\">\n    </ul>\n    <!-- Example loading data from static data in config.json -->\n    <ul     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\n             data-dojo-attach-point=\"dataItems2\"\n             data-dojo-props=\"store: this.loadedStores.store2\">\n    </ul>\n\n\n</div>\n",
 '*now':function(r){r(['dojo/i18n!*preload*app/nls/main*["ar","ca","cs","da","de","el","en","en-gb","en-us","es","es-es","fi","fi-fi","fr","fr-fr","he","he-il","hu","it","it-it","ja","ja-jp","ko","ko-kr","nl","nl-nl","nb","pl","pt","pt-br","pt-pt","ru","sk","sl","sv","th","tr","zh","zh-tw","zh-cn","ROOT"]']);}
 }});

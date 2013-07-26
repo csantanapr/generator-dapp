@@ -81,6 +81,7 @@ cp -a "$TMP_BUILD_DIR/index.html" "$DIST_WWW_DIR"
 mkdir -p "$DIST_WWW_DIR/app/nls"
 mkdir -p "$DIST_WWW_DIR/app/views/css"
 mkdir -p "$DIST_WWW_DIR/app/views/images"
+mkdir -p "$DIST_WWW_DIR/app/resources/data/rest"
 
 #css
 cp -a "$TMP_BUILD_DIR/app/views/css/app.css" "$DIST_WWW_DIR/app/views/css/"
@@ -97,6 +98,9 @@ rm -rf $DIST_WWW_DIR/app/*.consoleStripped.js
 cp -af $TMP_BUILD_DIR/app/nls/main*.js             $DIST_WWW_DIR/app/nls/
 rm -f $DIST_WWW_DIR/app/nls/*.consoleStripped.js
 rm -f $DIST_WWW_DIR/app/nls/*.uncompressed.js
+
+#json
+cp -a "$TMP_BUILD_DIR/app/resources/data/rest" "$DIST_WWW_DIR/app/resources/data"
 
 ##############Copy View 1 stuff (Optional)####################################
 #Just in case there are static files specific to view1 and not other views1

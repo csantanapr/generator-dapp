@@ -26,7 +26,9 @@
         /* For build to include css3/lite query selectorEngine */
         "dojo/selector/lite",
         //Need to inlclude dependency for model stores across views
-        "dojo/store/Memory"
+        "dojo/store/Memory",
+        "dojo/store/JsonRest"
+
 
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
@@ -59,7 +61,14 @@
                         ],
                 "idProperty":"label"
             }
-        }
+        },
+        "jsonStore":{
+            "type": "dojo/store/JsonRest",
+            "observable": true,
+            "params": {
+                "target": "app/resources/data/rest/items.json"
+            }
+        },
     },
 
     //Optional
@@ -96,7 +105,8 @@
                 "dojox/mobile/ListItem",
                 "dojox/mobile/Button",
                 "dojox/mobile/RoundRectStoreList",
-                "dojox/mobile/TextBox"
+                "dojox/mobile/TextBox",
+                "dojox/mobile/RoundRectCategory"
             ],
             "stores": {
                 "store3":{

@@ -1,60 +1,67 @@
 <div class="view view1 mblView">
 
-    <!-- Access View properties and nls strings without a View Controller -->
-    <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>
-    <div>$ {name} = ${name}</div>
-    <div>$ {template} = ${template}</div>
-    <div>$ {nls.app_string} = ${nls.app_string}</div>
-    <div>$ {nls.view1_string} = ${nls.view1_string}</div>
+  <!-- Access View properties and nls strings without a View Controller -->
+  <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>
+  <div>$ {name} = ${name}</div>
+  <div>$ {template} = ${template}</div>
+  <div>$ {nls.app_string} = ${nls.app_string}</div>
+  <div>$ {nls.view1_string} = ${nls.view1_string}</div>
 
 
-    <!-- Access primitive properties from View Controller -->
+  <!-- Access primitive properties from View Controller -->
     <!-- As defined on View Controller
     'aNumber'    : 42,
     'aString'    : 'aString',
     'aStringScapedQuotes'    : 'Got to View 2:<a href="index.html#view2">click</a>',
     'aBoolean'   : true,
     'aNull'      : null,
-    -->
-    <div>$ {aNumber}  = ${aNumber}</div>
-    <div>$ {aString} = ${aString}</div>
-    <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>
-    <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>
-    <div>$ {aBoolean} = ${aBoolean}</div>
-    <div>$ {aNull} = ${aNull}</div>
-    <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>
+  -->
+  <div>$ {aNumber}  = ${aNumber}</div>
+  <div>$ {aString} = ${aString}</div>
+  <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>
+  <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>
+  <div>$ {aBoolean} = ${aBoolean}</div>
+  <div>$ {aNull} = ${aNull}</div>
+  <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>
 
-    <!-- Access A different locale -->
-    <a href="${nls.locale_link}"> Click to change locale: ${nls.locale_link}</a>
+  <!-- Access A different locale -->
+  <a href="${nls.locale_link}"> Click to change locale: ${nls.locale_link}</a>
 
-    <!-- Transition to a different view using ListItem 'startTransition' Event -->
-    <ul data-dojo-type="dojox/mobile/RoundRectList">
-        <li data-dojo-type="dojox/mobile/ListItem" data-dojo-props="clickable:true,target:'view2',url:'#view2'">
-            Go to View 2
-        </li>
-    </ul>
+  <!-- Transition to a different view using ListItem 'startTransition' Event -->
+  <ul data-dojo-type="dojox/mobile/RoundRectList">
+    <li data-dojo-type="dojox/mobile/ListItem" data-dojo-props="clickable:true,target:'view2',url:'#view2'">
+      Go to View 2
+    </li>
+  </ul>
 
-    <!-- Access functions on the View Controller -->
-    <ul data-dojo-type="dojox/mobile/RoundRectList">
-        <!-- Run function from View Controller by assigning ListItem onClick to a function -->
-        <li data-dojo-type="dojox/mobile/Button" data-dojo-attach-event="onClick:doSomething">
-        doSomething()
-        </li>
-        <!-- View Controller will use id to attach an Event listener on this button -->
-        <li data-dojo-type="dojox/mobile/Button" id="doSomethingOnce" >
-        doSomething on.once()
-        </li>
-        <li>
-            <!-- View Controller will use to display output from doSomething() -->
-            <input data-dojo-type="dojox/mobile/TextBox" type="text" >
-            </input>
-        </li>
-    </ul>
-    <!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->
-    <ul     data-dojo-type="dojox/mobile/RoundRectStoreList"
-             data-dojo-attach-point="dataItems3"
-             data-dojo-props="store: this.loadedStores.store3,
-             itemMap:{field:'label', value:'rightText', art:'icon'}">
-    </ul>
+  <!-- Access functions on the View Controller -->
+  <ul data-dojo-type="dojox/mobile/RoundRectList">
+    <!-- Run function from View Controller by assigning ListItem onClick to a function -->
+    <li data-dojo-type="dojox/mobile/Button" data-dojo-attach-event="onClick:doSomething">
+      doSomething()
+    </li>
+    <!-- View Controller will use id to attach an Event listener on this button -->
+    <li data-dojo-type="dojox/mobile/Button" id="doSomethingOnce" >
+      doSomething on.once()
+    </li>
+    <li>
+      <!-- View Controller will use to display output from doSomething() -->
+      <input data-dojo-type="dojox/mobile/TextBox" type="text" >
+    </input>
+  </li>
+</ul>
+<!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->
+<ul data-dojo-type="dojox/mobile/RoundRectStoreList"
+data-dojo-attach-point="dataItems3"
+data-dojo-props="store: this.loadedStores.store3,
+itemMap:{field:'label', value:'rightText', art:'icon'}">
+</ul>
+
+<h2 data-dojo-type="dojox/mobile/RoundRectCategory">Email</h2>
+<ul data-dojo-type="dojox/mobile/RoundRectStoreList"
+data-dojo-attach-point="restItems1"
+data-dojo-props="store: this.loadedStores.jsonStore,
+itemMap:{name:'label', count:'rightText'}">
+</ul>
 
 </div>
