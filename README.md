@@ -66,6 +66,23 @@ request! (Please note that you will need to have signed the [Dojo
 CLA](http://dojofoundation.org/about/cla) before your pull requests are
 accepted, for the good of us all!)
 
+Change Log
+---
+#### Version 0.1.0
+- Build Scripts
+  - Fast builds (i.e. ~10 seconds)
+  - Small Distribution output (dojo.js+main.js ~200KB)
+  - National Language Support (i18n)
+- Example App with dojox/app features
+  - View Templates (HTML)
+  - View Controller (JS)
+  - Transitions (CSS3 hardware accelerated)
+  - JQuery Style syntax for DOM and Events
+  - Data Stores (Memory, MongoDB-JSONREST)
+  - Dojo Mobile UI
+- Integration with new Apache Cordova 3.0 CLI
+  
+
 Future
 ---
 
