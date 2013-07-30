@@ -14,7 +14,7 @@ Quick Start
 1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git`
 2. Develop your project in `src/app/` using html,css,js until it is amazing.
 3. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
-4. Run `.cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
+4. Run `cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
 5. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
 6. (Optional) Run nodejs rest service with mongodb `mongod` and `node server`
 
@@ -70,33 +70,39 @@ Change Log
 ---
 #### Version 0.1.0
 - Build Scripts
-  - Fast builds (i.e. ~10 seconds)
-  - Small Distribution output (dojo.js+main.js ~200KB)
+  - Fast dojo builds using uglifyjs
+  - Small Distribution output
   - National Language Support (i18n)
 - Example App with dojox/app features
   - View Templates (HTML)
   - View Controller (JS)
   - Transitions (CSS3 hardware accelerated)
   - JQuery Style syntax for DOM and Events
-  - Data Stores (Memory, MongoDB-JSONREST)
+  - Object Stores Stores (Memory, MongoDB-JSONREST)
   - Dojo Mobile UI
 - Integration with new Apache Cordova 3.0 CLI
-  
+
 
 Future
 ---
-
+- Automate build and test tasks
+  - Add support for Grunt Tasks
+- Integrate component management
+  - Add support for bower or volo
+- Integrate Automation Testing
+  - Add unit tests (i.e. Jasmine or Mocha)
+  - Add functional testing (Webdriver API)
+  - Run Unit and Functional Testing using [The Intern](https://github.com/theintern/intern) leveraging the [ Intern Tutorial](https://github.com/theintern/intern-tutorial)
 - Basic boilerplate to create App generator/scaffolding for other projects:
   - [Yoeman](http://yeoman.io)
   - [IBM Worklight](http://ibm.com/mobilefirst)
-  - [Apache Cordova CLI](http://cordova.io)
 - Examples on how to integrate Dojox/App with other Projects:
   - [Handlebars](http://handlebarsjs.com)
   - [JQuery](http://jquery.com)
-  - [Jasmine](http://pivotal.github.com/jasmine)
   - [NodeJS](http://nodejs.org)
   - [MongoDB](http://www.mongodb.org)
-- Education resources
+- Education resources on [dApp website](http://csantanapr.github.io/dapp-boilerplate)
+  - Getting Started
   - Screencasts
   - Tutorials
 - Next-Gen 2.x
