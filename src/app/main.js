@@ -32,7 +32,6 @@ define([
     //TODO: add all html templates being use in config.json to force them to be included in layer
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
-    'dojo/text!app/views/view1/view1.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
 ], function (win, has, require, Application, json, config, data) {

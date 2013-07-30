@@ -107,14 +107,8 @@
             //Optional, view level strings they get mixed into global nls object
             "nls": "app/views/view1/nls/view1_strings",
             //Optional, dependencies for this specific view, declare in template
-            "dependencies":[
-                "dojox/mobile/RoundRectList",
-                "dojox/mobile/ListItem",
-                "dojox/mobile/Button",
-                "dojox/mobile/RoundRectStoreList",
-                "dojox/mobile/TextBox",
-                "dojox/mobile/RoundRectCategory"
-            ],
+            //"dependencies":[
+            //],
             "stores": {
                 "store3":{
                     "type": "dojo/store/Memory",

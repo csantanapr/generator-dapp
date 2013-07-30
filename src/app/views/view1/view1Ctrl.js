@@ -2,31 +2,30 @@
 /*jshint nomen: true */
 /*global _, define, console, alert */
 define([
-    'dojo/_base/declare',
     'dojo/query!css3',
     //query is the core of dojo dom query
     // the return is NodeList that has full set of functions
     // most of the function have same syntax as jquery see bellow this file for summary
     'dojo/on',
+    'dojo/NodeList-manipulate',     // Load dojo/NodeList-manipulate to get JQuery syntax: see below this file for function syntax
+    'dojo/text!app/views/view1/view1.html',
+    'dojox/mobile/RoundRectList',
     'dojox/mobile/ListItem',
-    'dojo/NodeList-manipulate'
-    // Load dojo/NodeList-manipulate to get JQuery syntax: see below this file for function syntax
-], function (declare, $, on, ListItem) {
+    'dojox/mobile/Button',
+    'dojox/mobile/RoundRectStoreList',
+    'dojox/mobile/TextBox',
+    'dojox/mobile/RoundRectCategory'
+], function ($, on) {
     'use strict';
 
     var handles,
         view,
         viewNode,
-        count = 0,
-        DataListItem = declare(ListItem, {
-            target: "requestItemDetails"
-        });
+        count = 0;
 
 
 
     return {
-        DataListItem: DataListItem,
-
         init: function (params) {
             // summary:
             //      view life cycle init()
