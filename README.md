@@ -82,6 +82,11 @@ Change Log
   - Object Stores Stores (Memory, MongoDB-JSONREST)
   - Dojo Mobile UI
 - Integration with new Apache Cordova 3.0 CLI
+#### Version 0.1.2
+- Fix Build Scripts to include local path
+- Fix npm package.json to include uglify-js
+- Updated Readme to indicate user to run `npm install`
+
 
 
 Future
