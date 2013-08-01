@@ -6,6 +6,9 @@ date1=$(date +"%s")
 # Base directory for this entire project
 BASEDIR=$(cd $(dirname $0) && pwd)
 
+#Update path for dependencies
+PATH="${BASEDIR}/node_modules/.bin::${PATH}"
+
 # Destination directory for built code
 DIST_DIR="$BASEDIR/dist"
 

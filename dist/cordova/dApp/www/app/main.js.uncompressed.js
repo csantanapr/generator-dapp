@@ -9979,31 +9979,30 @@ define(["require", "dojo/when", "dojo/on", "dojo/dom-attr", "dojo/_base/declare"
 /*jshint nomen: true */
 /*global _, define, console, alert */
 define([
-    'dojo/_base/declare',
     'dojo/query!css3',
     //query is the core of dojo dom query
     // the return is NodeList that has full set of functions
     // most of the function have same syntax as jquery see bellow this file for summary
     'dojo/on',
+    'dojo/NodeList-manipulate',     // Load dojo/NodeList-manipulate to get JQuery syntax: see below this file for function syntax
+    'dojo/text!app/views/view1/view1.html',
+    'dojox/mobile/RoundRectList',
     'dojox/mobile/ListItem',
-    'dojo/NodeList-manipulate'
-    // Load dojo/NodeList-manipulate to get JQuery syntax: see below this file for function syntax
-], function (declare, $, on, ListItem) {
+    'dojox/mobile/Button',
+    'dojox/mobile/RoundRectStoreList',
+    'dojox/mobile/TextBox',
+    'dojox/mobile/RoundRectCategory'
+], function ($, on) {
     'use strict';
 
     var handles,
         view,
         viewNode,
-        count = 0,
-        DataListItem = declare(ListItem, {
-            target: "requestItemDetails"
-        });
+        count = 0;
 
 
 
     return {
-        DataListItem: DataListItem,
-
         init: function (params) {
             // summary:
             //      view life cycle init()
@@ -10197,6 +10196,1065 @@ define([
 .wrapInner(html) For each node in the NodeList, wrap all its children with the passed in html..
 */
 
+});
+
+},
+'dojo/NodeList-manipulate':function(){
+define(["./query", "./_base/lang", "./_base/array", "./dom-construct", "./NodeList-dom"], function(dquery, lang, array, construct){
+	// module:
+	//		dojo/NodeList-manipulate
+
+	/*=====
+	return function(){
+		// summary:
+		//		Adds chainable methods to dojo.query() / NodeList instances for manipulating HTML
+		//		and DOM nodes and their properties.
+	};
+	=====*/
+
+	var NodeList = dquery.NodeList;
+
+	//TODO: add a way to parse for widgets in the injected markup?
+
+	function getText(/*DOMNode*/node){
+		// summary:
+		//		recursion method for text() to use. Gets text value for a node.
+		// description:
+		//		Juse uses nodedValue so things like <br/> tags do not end up in
+		//		the text as any sort of line return.
+		var text = "", ch = node.childNodes;
+		for(var i = 0, n; n = ch[i]; i++){
+			//Skip comments.
+			if(n.nodeType != 8){
+				if(n.nodeType == 1){
+					text += getText(n);
+				}else{
+					text += n.nodeValue;
+				}
+			}
+		}
+		return text;
+	}
+
+	function getWrapInsertion(/*DOMNode*/node){
+		// summary:
+		//		finds the innermost element to use for wrap insertion.
+
+		//Make it easy, assume single nesting, no siblings.
+		while(node.childNodes[0] && node.childNodes[0].nodeType == 1){
+			node = node.childNodes[0];
+		}
+		return node; //DOMNode
+	}
+
+	function makeWrapNode(/*DOMNode||String*/html, /*DOMNode*/refNode){
+		// summary:
+		//		convert HTML into nodes if it is not already a node.
+		if(typeof html == "string"){
+			html = construct.toDom(html, (refNode && refNode.ownerDocument));
+			if(html.nodeType == 11){
+				//DocumentFragment cannot handle cloneNode, so choose first child.
+				html = html.childNodes[0];
+			}
+		}else if(html.nodeType == 1 && html.parentNode){
+			//This element is already in the DOM clone it, but not its children.
+			html = html.cloneNode(false);
+		}
+		return html; /*DOMNode*/
+	}
+
+	lang.extend(NodeList, {
+		_placeMultiple: function(/*String||Node||NodeList*/query, /*String*/position){
+			// summary:
+			//		private method for inserting queried nodes into all nodes in this NodeList
+			//		at different positions. Differs from NodeList.place because it will clone
+			//		the nodes in this NodeList if the query matches more than one element.
+			var nl2 = typeof query == "string" || query.nodeType ? dquery(query) : query;
+			var toAdd = [];
+			for(var i = 0; i < nl2.length; i++){
+				//Go backwards in DOM to make dom insertions easier via insertBefore
+				var refNode = nl2[i];
+				var length = this.length;
+				for(var j = length - 1, item; item = this[j]; j--){
+					if(i > 0){
+						//Need to clone the item. This also means
+						//it needs to be added to the current NodeList
+						//so it can also be the target of other chaining operations.
+						item = this._cloneNode(item);
+						toAdd.unshift(item);
+					}
+					if(j == length - 1){
+						construct.place(item, refNode, position);
+					}else{
+						refNode.parentNode.insertBefore(item, refNode);
+					}
+					refNode = item;
+				}
+			}
+
+			if(toAdd.length){
+				//Add the toAdd items to the current NodeList. Build up list of args
+				//to pass to splice.
+				toAdd.unshift(0);
+				toAdd.unshift(this.length - 1);
+				Array.prototype.splice.apply(this, toAdd);
+			}
+
+			return this; // dojo/NodeList
+		},
+
+		innerHTML: function(/*String|DOMNode|NodeList?*/ value){
+			// summary:
+			//		allows setting the innerHTML of each node in the NodeList,
+			//		if there is a value passed in, otherwise, reads the innerHTML value of the first node.
+			// description:
+			//		This method is simpler than the dojo/NodeList.html() method provided by
+			//		`dojo/NodeList-html`. This method just does proper innerHTML insertion of HTML fragments,
+			//		and it allows for the innerHTML to be read for the first node in the node list.
+			//		Since dojo/NodeList-html already took the "html" name, this method is called
+			//		"innerHTML". However, if dojo/NodeList-html has not been loaded yet, this
+			//		module will define an "html" method that can be used instead. Be careful if you
+			//		are working in an environment where it is possible that dojo/NodeList-html could
+			//		have been loaded, since its definition of "html" will take precedence.
+			//		The nodes represented by the value argument will be cloned if more than one
+			//		node is in this NodeList. The nodes in this NodeList are returned in the "set"
+			//		usage of this method, not the HTML that was inserted.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts `<p>Hello World</p>` into both divs:
+			//	|	dojo.query("div").innerHTML("<p>Hello World</p>");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns `<p>Hello Mars</p>`:
+			//	|	var message = dojo.query("div").innerHTML();
+			if(arguments.length){
+				return this.addContent(value, "only"); // dojo/NodeList
+			}else{
+				return this[0].innerHTML; //String
+			}
+		},
+
+		/*=====
+		html: function(value){
+			// summary:
+			//		see the information for "innerHTML". "html" is an alias for "innerHTML", but is
+			//		only defined if dojo/NodeList-html has not been loaded.
+			// description:
+			//		An alias for the "innerHTML" method, but only defined if there is not an existing
+			//		"html" method on dojo/NodeList. Be careful if you are working in an environment
+			//		where it is possible that dojo/NodeList-html could have been loaded, since its
+			//		definition of "html" will take precedence. If you are not sure if dojo/NodeList-html
+			//		could be loaded, use the "innerHTML" method.
+			// value: String|DOMNode|NodeList?
+			//		The HTML fragment to use as innerHTML. If value is not passed, then the innerHTML
+			//		of the first element in this NodeList is returned.
+			// returns:
+			//		if no value is passed, the result is String, the innerHTML of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			return; // dojo/NodeList|String
+		},
+		=====*/
+
+		text: function(/*String*/value){
+			// summary:
+			//		allows setting the text value of each node in the NodeList,
+			//		if there is a value passed in, otherwise, returns the text value for all the
+			//		nodes in the NodeList in one string.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"></div>
+			//	|	<div id="bar"></div>
+			//		This code inserts "Hello World" into both divs:
+			//	|	dojo.query("div").text("Hello World");
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars <span>today</span></p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		This code returns "Hello Mars today":
+			//	|	var message = dojo.query("div").text();
+			// returns:
+			//		if no value is passed, the result is String, the text value of the first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			if(arguments.length){
+				for(var i = 0, node; node = this[i]; i++){
+					if(node.nodeType == 1){
+						construct.empty(node);
+						node.appendChild(node.ownerDocument.createTextNode(value));
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				var result = "";
+				for(i = 0; node = this[i]; i++){
+					result += getText(node);
+				}
+				return result; //String
+			}
+		},
+
+		val: function(/*String||Array*/value){
+			// summary:
+			//		If a value is passed, allows seting the value property of form elements in this
+			//		NodeList, or properly selecting/checking the right value for radio/checkbox/select
+			//		elements. If no value is passed, the value of the first node in this NodeList
+			//		is returned.
+			// returns:
+			//		if no value is passed, the result is String or an Array, for the value of the
+			//		first node.
+			//		If a value is passed, the return is this dojo/NodeList
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<input type="text" value="foo">
+			//	|	<select multiple>
+			//	|		<option value="red" selected>Red</option>
+			//	|		<option value="blue">Blue</option>
+			//	|		<option value="yellow" selected>Yellow</option>
+			//	|	</select>
+			//		This code gets and sets the values for the form fields above:
+			//	|	dojo.query('[type="text"]').val(); //gets value foo
+			//	|	dojo.query('[type="text"]').val("bar"); //sets the input's value to "bar"
+			// 	|	dojo.query("select").val() //gets array value ["red", "yellow"]
+			// 	|	dojo.query("select").val(["blue", "yellow"]) //Sets the blue and yellow options to selected.
+
+			//Special work for input elements.
+			if(arguments.length){
+				var isArray = lang.isArray(value);
+				for(var index = 0, node; node = this[index]; index++){
+					var name = node.nodeName.toUpperCase();
+					var type = node.type;
+					var newValue = isArray ? value[index] : value;
+
+					if(name == "SELECT"){
+						var opts = node.options;
+						for(var i = 0; i < opts.length; i++){
+							var opt = opts[i];
+							if(node.multiple){
+								opt.selected = (array.indexOf(value, opt.value) != -1);
+							}else{
+								opt.selected = (opt.value == newValue);
+							}
+						}
+					}else if(type == "checkbox" || type == "radio"){
+						node.checked = (node.value == newValue);
+					}else{
+						node.value = newValue;
+					}
+				}
+				return this; // dojo/NodeList
+			}else{
+				//node already declared above.
+				node = this[0];
+				if(!node || node.nodeType != 1){
+					return undefined;
+				}
+				value = node.value || "";
+				if(node.nodeName.toUpperCase() == "SELECT" && node.multiple){
+					//A multivalued selectbox. Do the pain.
+					value = [];
+					//opts declared above in if block.
+					opts = node.options;
+					//i declared above in if block;
+					for(i = 0; i < opts.length; i++){
+						//opt declared above in if block
+						opt = opts[i];
+						if(opt.selected){
+							value.push(opt.value);
+						}
+					}
+					if(!value.length){
+						value = null;
+					}
+				}
+				return value; //String||Array
+			}
+		},
+
+		append: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		appends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").append("<span>append</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p><span>append</span></div>
+			//	|	<div id="bar"><p>Hello World</p><span>append</span></div>
+			return this.addContent(content, "last"); // dojo/NodeList
+		},
+
+		appendTo: function(/*String*/query){
+			// summary:
+			//		appends nodes in this NodeList to the nodes matched by
+			//		the query passed to appendTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>append</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").appendTo("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars<span>append</span></p>
+			//	|	<p>Hello World<span>append</span></p>
+			return this._placeMultiple(query, "last"); // dojo/NodeList
+		},
+
+		prepend: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		prepends the content to every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").prepend("<span>prepend</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><span>prepend</span><p>Hello Mars</p></div>
+			//	|	<div id="bar"><span>prepend</span><p>Hello World</p></div>
+			return this.addContent(content, "first"); // dojo/NodeList
+		},
+
+		prependTo: function(/*String*/query){
+			// summary:
+			//		prepends nodes in this NodeList to the nodes matched by
+			//		the query passed to prependTo.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>prepend</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").prependTo("p");
+			//		Results in this DOM structure:
+			//	|	<p><span>prepend</span>Hello Mars</p>
+			//	|	<p><span>prepend</span>Hello World</p>
+			return this._placeMultiple(query, "first"); // dojo/NodeList
+		},
+
+		after: function(/*String||Element||NodeList*/content){
+			// summary:
+			//		Places the content after every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").after("<span>after</span>");
+			//		Results in this DOM structure:
+			//	|	<div id="foo"><p>Hello Mars</p></div><span>after</span>
+			//	|	<div id="bar"><p>Hello World</p></div><span>after</span>
+			return this.addContent(content, "after"); // dojo/NodeList
+		},
+
+		insertAfter: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>after</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertAfter("p");
+			//		Results in this DOM structure:
+			//	|	<p>Hello Mars</p><span>after</span>
+			//	|	<p>Hello World</p><span>after</span>
+			return this._placeMultiple(query, "after"); // dojo/NodeList
+		},
+
+		before: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Places the content before every node in the NodeList.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the appended content.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div id="foo"><p>Hello Mars</p></div>
+			//	|	<div id="bar"><p>Hello World</p></div>
+			//		Running this code:
+			//	|	dojo.query("div").before("<span>before</span>");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><div id="foo"><p>Hello Mars</p></div>
+			//	|	<span>before</span><div id="bar"><p>Hello World</p></div>
+			return this.addContent(content, "before"); // dojo/NodeList
+		},
+
+		insertBefore: function(/*String*/query){
+			// summary:
+			//		The nodes in this NodeList will be placed after the nodes
+			//		matched by the query passed to insertAfter.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
+			//		not the matched nodes from the query.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<span>before</span>
+			//	|	<p>Hello Mars</p>
+			//	|	<p>Hello World</p>
+			//		Running this code:
+			//	|	dojo.query("span").insertBefore("p");
+			//		Results in this DOM structure:
+			//	|	<span>before</span><p>Hello Mars</p>
+			//	|	<span>before</span><p>Hello World</p>
+			return this._placeMultiple(query, "before"); // dojo/NodeList
+		},
+
+		/*=====
+		remove: function(simpleFilter){
+			// summary:
+			//		alias for dojo/NodeList's orphan method. Removes elements
+			//		in this list that match the simple filter from their parents
+			//		and returns them as a new NodeList.
+			// simpleFilter: String
+			//		single-expression CSS rule. For example, ".thinger" or
+			//		"#someId[attrName='value']" but not "div > span". In short,
+			//		anything which does not invoke a descent to evaluate but
+			//		can instead be used to test a single node is acceptable.
+
+			return; // dojo/NodeList
+		},
+		=====*/
+		remove: NodeList.prototype.orphan,
+
+		wrap: function(/*String||DOMNode*/html){
+			// summary:
+			//		Wrap each node in the NodeList with html passed to wrap.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<b>one</b>
+			//	|	<b>two</b>
+			//		Running this code:
+			//	|	dojo.query("b").wrap("<div><span></span></div>");
+			//		Results in this DOM structure:
+			//	|	<div><span><b>one</b></span></div>
+			//	|	<div><span><b>two</b></span></div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Now cycle through the elements and do the insertion.
+				for(var i = 0, node; node = this[i]; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+					if(node.parentNode){
+						node.parentNode.replaceChild(clone, node);
+					}
+					//Find deepest element and insert old node in it.
+					var insertion = getWrapInsertion(clone);
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapAll: function(/*String||DOMNode*/html){
+			// summary:
+			//		Insert html where the first node in this NodeList lives, then place all
+			//		nodes in this NodeList as the child of the html.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapAll('<div class="allRed"></div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="allRed">
+			// 	|			<div class="red">Red One</div>
+			// 	|			<div class="red">Red Two</div>
+			// 	|		</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+
+				//Place the wrap HTML in place of the first node.
+				this[0].parentNode.replaceChild(html, this[0]);
+
+				//Now cycle through the elements and move them inside
+				//the wrap.
+				var insertion = getWrapInsertion(html);
+				for(var i = 0, node; node = this[i]; i++){
+					insertion.appendChild(node);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		wrapInner: function(/*String||DOMNode*/html){
+			// summary:
+			//		For each node in the NodeList, wrap all its children with the passed in html.
+			// description:
+			//		html will be cloned if the NodeList has more than one
+			//		element. Only DOM nodes are cloned, not any attached
+			//		event handlers.
+			// returns:
+			//		the nodes in the current NodeList will be returned,
+			//		not the nodes from html argument.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").wrapInner('<span class="special"></span>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red"><span class="special">Red One</span></div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red"><span class="special">Red Two</span></div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			if(this[0]){
+				html = makeWrapNode(html, this[0]);
+				for(var i = 0; i < this.length; i++){
+					//Always clone because if html is used to hold one of
+					//the "this" nodes, then on the clone of html it will contain
+					//that "this" node, and that would be bad.
+					var clone = this._cloneNode(html);
+
+					//Need to convert the childNodes to an array since wrapAll modifies the
+					//DOM and can change the live childNodes NodeList.
+					this._wrap(lang._toArray(this[i].childNodes), null, this._NodeListCtor).wrapAll(clone);
+				}
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceWith: function(/*String||DOMNode||NodeList*/content){
+			// summary:
+			//		Replaces each node in ths NodeList with the content passed to replaceWith.
+			// description:
+			//		The content will be cloned if the length of NodeList
+			//		is greater than 1. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the replacing content.
+			//		Note that the returned nodes have been removed from the DOM.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceWith('<div class="green">Green</div>');
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="green">Green</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			content = this._normalize(content, this[0]);
+			for(var i = 0, node; node = this[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		replaceAll: function(/*String*/query){
+			// summary:
+			//		replaces nodes matched by the query passed to replaceAll with the nodes
+			//		in this NodeList.
+			// description:
+			//		The nodes in this NodeList will be cloned if the query
+			//		matches more than one element. Only the DOM nodes are cloned, not
+			//		any attached event handlers.
+			// returns:
+			//		The nodes currently in this NodeList will be returned, not the matched nodes
+			//		from the query. The nodes currently in this NodeLIst could have
+			//		been cloned, so the returned NodeList will include the cloned nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").replaceAll(".blue");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="spacer">___</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+			var nl = dquery(query);
+			var content = this._normalize(this, this[0]);
+			for(var i = 0, node; node = nl[i]; i++){
+				this._place(content, node, "before", i > 0);
+				node.parentNode.removeChild(node);
+			}
+			return this; // dojo/NodeList
+		},
+
+		clone: function(){
+			// summary:
+			//		Clones all the nodes in this NodeList and returns them as a new NodeList.
+			// description:
+			//		Only the DOM nodes are cloned, not any attached event handlers.
+			// returns:
+			//		a cloned set of the original nodes.
+			// example:
+			//		assume a DOM created by this markup:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			//	|	</div>
+			//		Running this code:
+			//	|	dojo.query(".red").clone().appendTo(".container");
+			//		Results in this DOM structure:
+			//	|	<div class="container">
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="blue">Blue One</div>
+			// 	|		<div class="red">Red Two</div>
+			// 	|		<div class="blue">Blue Two</div>
+			// 	|		<div class="red">Red One</div>
+			// 	|		<div class="red">Red Two</div>
+			//	|	</div>
+
+			//TODO: need option to clone events?
+			var ary = [];
+			for(var i = 0; i < this.length; i++){
+				ary.push(this._cloneNode(this[i]));
+			}
+			return this._wrap(ary, this, this._NodeListCtor); // dojo/NodeList
+		}
+	});
+
+	//set up html method if one does not exist
+	if(!NodeList.prototype.html){
+		NodeList.prototype.html = NodeList.prototype.innerHTML;
+	}
+
+	return NodeList;
+});
+
+},
+'dojox/mobile/RoundRectList':function(){
+define([
+	"dojo/_base/array",
+	"dojo/_base/declare",
+	"dojo/_base/event",
+	"dojo/_base/lang",
+	"dojo/_base/window",
+	"dojo/dom-construct",
+	"dojo/dom-attr",
+	"dijit/_Contained",
+	"dijit/_Container",
+	"dijit/_WidgetBase"
+], function(array, declare, event, lang, win, domConstruct, domAttr, Contained, Container, WidgetBase){
+
+	// module:
+	//		dojox/mobile/RoundRectList
+
+	return declare("dojox.mobile.RoundRectList", [WidgetBase, Container, Contained], {
+		// summary:
+		//		A rounded rectangle list.
+		// description:
+		//		RoundRectList is a rounded rectangle list, which can be used to
+		//		display a group of items. Each item must be a dojox/mobile/ListItem.
+
+		// transition: String
+		//		The default animated transition effect for child items.
+		transition: "slide",
+
+		// iconBase: String
+		//		The default icon path for child items.
+		iconBase: "",
+
+		// iconPos: String
+		//		The default icon position for child items.
+		iconPos: "",
+
+		// select: String
+		//		Selection mode of the list. The check mark is shown for the
+		//		selected list item(s). The value can be "single", "multiple", or "".
+		//		If "single", there can be only one selected item at a time.
+		//		If "multiple", there can be multiple selected items at a time.
+		//		If "", the check mark is not shown.
+		select: "",
+
+		// stateful: Boolean
+		//		If true, the last selected item remains highlighted.
+		stateful: false,
+
+		// syncWithViews: [const] Boolean
+		//		If true, this widget listens to view transition events to be
+		//		synchronized with view's visibility.
+		//		Note that changing the value of the property after the widget
+		//		creation has no effect.
+		syncWithViews: false,
+
+		// editable: [const] Boolean
+		//		If true, the list can be reordered.
+		//		Note that changing the value of the property after the widget
+		//		creation has no effect.
+		editable: false,
+
+		// tag: String
+		//		A name of html tag to create as domNode.
+		tag: "ul",
+
+		/* internal properties */
+		// editableMixinClass: String
+		//		The name of the mixin class.
+		editableMixinClass: "dojox/mobile/_EditableListMixin",
+		
+		// baseClass: String
+		//		The name of the CSS class of this widget.
+		baseClass: "mblRoundRectList",
+		
+		// filterBoxClass: String
+		//		The name of the CSS class added to the DOM node inside which is placed the 
+		//		dojox/mobile/SearchBox created when mixing dojox/mobile/FilteredListMixin.
+		//		The default value is "mblFilteredRoundRectListSearchBox".  
+		filterBoxClass: "mblFilteredRoundRectListSearchBox",
+
+		buildRendering: function(){
+			this.domNode = this.srcNodeRef || domConstruct.create(this.tag);
+			if(this.select){
+				domAttr.set(this.domNode, "role", "listbox");
+				if(this.select === "multiple"){
+					domAttr.set(this.domNode, "aria-multiselectable", "true");
+				}
+			}
+			this.inherited(arguments);
+		},
+
+		postCreate: function(){
+			if(this.editable){
+				require([this.editableMixinClass], lang.hitch(this, function(module){
+					declare.safeMixin(this, new module());
+				}));
+			}
+			this.connect(this.domNode, "onselectstart", event.stop);
+
+			if(this.syncWithViews){ // see also TabBar#postCreate
+				var f = function(view, moveTo, dir, transition, context, method){
+					var child = array.filter(this.getChildren(), function(w){
+						return w.moveTo === "#" + view.id || w.moveTo === view.id; })[0];
+					if(child){ child.set("selected", true); }
+				};
+				this.subscribe("/dojox/mobile/afterTransitionIn", f);
+				this.subscribe("/dojox/mobile/startView", f);
+			}
+		},
+
+		resize: function(){
+			// summary:
+			//		Calls resize() of each child widget.
+			array.forEach(this.getChildren(), function(child){
+				if(child.resize){ child.resize(); }
+			});
+		},
+
+		onCheckStateChanged: function(/*Widget*//*===== listItem, =====*/ /*String*//*===== newState =====*/){
+			// summary:
+			//		Stub function to connect to from your application.
+			// description:
+			//		Called when the check state has been changed.
+		},
+
+		_setStatefulAttr: function(stateful){
+			// tags:
+			//		private
+			this._set("stateful", stateful);
+			this.selectOne = stateful;
+			array.forEach(this.getChildren(), function(child){
+				child.setArrow && child.setArrow();
+			});
+		},
+
+		deselectItem: function(/*dojox/mobile/ListItem*/item){
+			// summary:
+			//		Deselects the given item.
+			item.set("selected", false);
+		},
+
+		deselectAll: function(){
+			// summary:
+			//		Deselects all the items.
+			array.forEach(this.getChildren(), function(child){
+				child.set("selected", false);
+			});
+		},
+
+		selectItem: function(/*ListItem*/item){
+			// summary:
+			//		Selects the given item.
+			item.set("selected", true);
+		}
+	});
+});
+
+},
+'dijit/_Contained':function(){
+define([
+	"dojo/_base/declare", // declare
+	"./registry"	// registry.getEnclosingWidget(), registry.byNode()
+], function(declare, registry){
+
+	// module:
+	//		dijit/_Contained
+
+	return declare("dijit._Contained", null, {
+		// summary:
+		//		Mixin for widgets that are children of a container widget
+		// example:
+		//	|	// make a basic custom widget that knows about its parents
+		//	|	declare("my.customClass",[dijit._WidgetBase, dijit._Contained],{});
+
+		_getSibling: function(/*String*/ which){
+			// summary:
+			//		Returns next or previous sibling
+			// which:
+			//		Either "next" or "previous"
+			// tags:
+			//		private
+			var node = this.domNode;
+			do{
+				node = node[which+"Sibling"];
+			}while(node && node.nodeType != 1);
+			return node && registry.byNode(node);	// dijit/_WidgetBase
+		},
+
+		getPreviousSibling: function(){
+			// summary:
+			//		Returns null if this is the first child of the parent,
+			//		otherwise returns the next element sibling to the "left".
+
+			return this._getSibling("previous"); // dijit/_WidgetBase
+		},
+
+		getNextSibling: function(){
+			// summary:
+			//		Returns null if this is the last child of the parent,
+			//		otherwise returns the next element sibling to the "right".
+
+			return this._getSibling("next"); // dijit/_WidgetBase
+		},
+
+		getIndexInParent: function(){
+			// summary:
+			//		Returns the index of this widget within its container parent.
+			//		It returns -1 if the parent does not exist, or if the parent
+			//		is not a dijit/_Container
+
+			var p = this.getParent();
+			if(!p || !p.getIndexOfChild){
+				return -1; // int
+			}
+			return p.getIndexOfChild(this); // int
+		}
+	});
+});
+
+},
+'dijit/_Container':function(){
+define([
+	"dojo/_base/array", // array.forEach array.indexOf
+	"dojo/_base/declare", // declare
+	"dojo/dom-construct", // domConstruct.place
+	"dojo/_base/kernel" // kernel.deprecated
+], function(array, declare, domConstruct, kernel){
+
+	// module:
+	//		dijit/_Container
+
+	return declare("dijit._Container", null, {
+		// summary:
+		//		Mixin for widgets that contain HTML and/or a set of widget children.
+
+		buildRendering: function(){
+			this.inherited(arguments);
+			if(!this.containerNode){
+				// All widgets with descendants must set containerNode.
+				// NB: this code doesn't quite work right because for TabContainer it runs before
+				// _TemplatedMixin::buildRendering(), and thus
+				// sets this.containerNode to this.domNode, later to be overridden by the assignment in the template.
+				this.containerNode = this.domNode;
+			}
+		},
+
+		addChild: function(/*dijit/_WidgetBase*/ widget, /*int?*/ insertIndex){
+			// summary:
+			//		Makes the given widget a child of this widget.
+			// description:
+			//		Inserts specified child widget's dom node as a child of this widget's
+			//		container node, and possibly does other processing (such as layout).
+
+			// I want to just call domConstruct.place(widget.domNode, this.containerNode, insertIndex), but the counting
+			// is thrown off by text nodes and comment nodes that show up when constructed by markup.
+			// In the future consider stripping those nodes on construction, either in the parser or this widget code.
+			var refNode = this.containerNode;
+			if(insertIndex > 0){
+				// Old-school way to get nth child; dojo.query would be easier but _Container was weened from dojo.query
+				// in #10087 to minimize download size.   Not sure if that's still and issue with new smaller dojo/query.
+				refNode = refNode.firstChild;
+				while(insertIndex > 0){
+					if(refNode.nodeType == 1){ insertIndex--; }
+					refNode = refNode.nextSibling;
+				}
+				if(refNode){
+					insertIndex = "before";
+				}else{
+					// to support addChild(child, n-1) where there are n children (should add child at end)
+					refNode = this.containerNode;
+					insertIndex = "last";
+				}
+			}
+
+			domConstruct.place(widget.domNode, refNode, insertIndex);
+
+			// If I've been started but the child widget hasn't been started,
+			// start it now.  Make sure to do this after widget has been
+			// inserted into the DOM tree, so it can see that it's being controlled by me,
+			// so it doesn't try to size itself.
+			if(this._started && !widget._started){
+				widget.startup();
+			}
+		},
+
+		removeChild: function(/*Widget|int*/ widget){
+			// summary:
+			//		Removes the passed widget instance from this widget but does
+			//		not destroy it.  You can also pass in an integer indicating
+			//		the index within the container to remove (ie, removeChild(5) removes the sixth widget).
+
+			if(typeof widget == "number"){
+				widget = this.getChildren()[widget];
+			}
+
+			if(widget){
+				var node = widget.domNode;
+				if(node && node.parentNode){
+					node.parentNode.removeChild(node); // detach but don't destroy
+				}
+			}
+		},
+
+		hasChildren: function(){
+			// summary:
+			//		Returns true if widget has child widgets, i.e. if this.containerNode contains widgets.
+			return this.getChildren().length > 0;	// Boolean
+		},
+
+		_getSiblingOfChild: function(/*dijit/_WidgetBase*/ child, /*int*/ dir){
+			// summary:
+			//		Get the next or previous widget sibling of child
+			// dir:
+			//		if 1, get the next sibling
+			//		if -1, get the previous sibling
+			// tags:
+			//		private
+			kernel.deprecated(this.declaredClass+"::_getSiblingOfChild() is deprecated. Use _KeyNavMixin::_getNext() instead.", "", "2.0");
+			var children = this.getChildren(),
+				idx = array.indexOf(children, child);	// int
+			return children[idx + dir];
+		},
+
+		getIndexOfChild: function(/*dijit/_WidgetBase*/ child){
+			// summary:
+			//		Gets the index of the child in this container or -1 if not found
+			return array.indexOf(this.getChildren(), child);	// int
+		}
+	});
 });
 
 },
@@ -11493,180 +12551,6 @@ define([
 });
 
 },
-'dijit/_Contained':function(){
-define([
-	"dojo/_base/declare", // declare
-	"./registry"	// registry.getEnclosingWidget(), registry.byNode()
-], function(declare, registry){
-
-	// module:
-	//		dijit/_Contained
-
-	return declare("dijit._Contained", null, {
-		// summary:
-		//		Mixin for widgets that are children of a container widget
-		// example:
-		//	|	// make a basic custom widget that knows about its parents
-		//	|	declare("my.customClass",[dijit._WidgetBase, dijit._Contained],{});
-
-		_getSibling: function(/*String*/ which){
-			// summary:
-			//		Returns next or previous sibling
-			// which:
-			//		Either "next" or "previous"
-			// tags:
-			//		private
-			var node = this.domNode;
-			do{
-				node = node[which+"Sibling"];
-			}while(node && node.nodeType != 1);
-			return node && registry.byNode(node);	// dijit/_WidgetBase
-		},
-
-		getPreviousSibling: function(){
-			// summary:
-			//		Returns null if this is the first child of the parent,
-			//		otherwise returns the next element sibling to the "left".
-
-			return this._getSibling("previous"); // dijit/_WidgetBase
-		},
-
-		getNextSibling: function(){
-			// summary:
-			//		Returns null if this is the last child of the parent,
-			//		otherwise returns the next element sibling to the "right".
-
-			return this._getSibling("next"); // dijit/_WidgetBase
-		},
-
-		getIndexInParent: function(){
-			// summary:
-			//		Returns the index of this widget within its container parent.
-			//		It returns -1 if the parent does not exist, or if the parent
-			//		is not a dijit/_Container
-
-			var p = this.getParent();
-			if(!p || !p.getIndexOfChild){
-				return -1; // int
-			}
-			return p.getIndexOfChild(this); // int
-		}
-	});
-});
-
-},
-'dijit/_Container':function(){
-define([
-	"dojo/_base/array", // array.forEach array.indexOf
-	"dojo/_base/declare", // declare
-	"dojo/dom-construct", // domConstruct.place
-	"dojo/_base/kernel" // kernel.deprecated
-], function(array, declare, domConstruct, kernel){
-
-	// module:
-	//		dijit/_Container
-
-	return declare("dijit._Container", null, {
-		// summary:
-		//		Mixin for widgets that contain HTML and/or a set of widget children.
-
-		buildRendering: function(){
-			this.inherited(arguments);
-			if(!this.containerNode){
-				// All widgets with descendants must set containerNode.
-				// NB: this code doesn't quite work right because for TabContainer it runs before
-				// _TemplatedMixin::buildRendering(), and thus
-				// sets this.containerNode to this.domNode, later to be overridden by the assignment in the template.
-				this.containerNode = this.domNode;
-			}
-		},
-
-		addChild: function(/*dijit/_WidgetBase*/ widget, /*int?*/ insertIndex){
-			// summary:
-			//		Makes the given widget a child of this widget.
-			// description:
-			//		Inserts specified child widget's dom node as a child of this widget's
-			//		container node, and possibly does other processing (such as layout).
-
-			// I want to just call domConstruct.place(widget.domNode, this.containerNode, insertIndex), but the counting
-			// is thrown off by text nodes and comment nodes that show up when constructed by markup.
-			// In the future consider stripping those nodes on construction, either in the parser or this widget code.
-			var refNode = this.containerNode;
-			if(insertIndex > 0){
-				// Old-school way to get nth child; dojo.query would be easier but _Container was weened from dojo.query
-				// in #10087 to minimize download size.   Not sure if that's still and issue with new smaller dojo/query.
-				refNode = refNode.firstChild;
-				while(insertIndex > 0){
-					if(refNode.nodeType == 1){ insertIndex--; }
-					refNode = refNode.nextSibling;
-				}
-				if(refNode){
-					insertIndex = "before";
-				}else{
-					// to support addChild(child, n-1) where there are n children (should add child at end)
-					refNode = this.containerNode;
-					insertIndex = "last";
-				}
-			}
-
-			domConstruct.place(widget.domNode, refNode, insertIndex);
-
-			// If I've been started but the child widget hasn't been started,
-			// start it now.  Make sure to do this after widget has been
-			// inserted into the DOM tree, so it can see that it's being controlled by me,
-			// so it doesn't try to size itself.
-			if(this._started && !widget._started){
-				widget.startup();
-			}
-		},
-
-		removeChild: function(/*Widget|int*/ widget){
-			// summary:
-			//		Removes the passed widget instance from this widget but does
-			//		not destroy it.  You can also pass in an integer indicating
-			//		the index within the container to remove (ie, removeChild(5) removes the sixth widget).
-
-			if(typeof widget == "number"){
-				widget = this.getChildren()[widget];
-			}
-
-			if(widget){
-				var node = widget.domNode;
-				if(node && node.parentNode){
-					node.parentNode.removeChild(node); // detach but don't destroy
-				}
-			}
-		},
-
-		hasChildren: function(){
-			// summary:
-			//		Returns true if widget has child widgets, i.e. if this.containerNode contains widgets.
-			return this.getChildren().length > 0;	// Boolean
-		},
-
-		_getSiblingOfChild: function(/*dijit/_WidgetBase*/ child, /*int*/ dir){
-			// summary:
-			//		Get the next or previous widget sibling of child
-			// dir:
-			//		if 1, get the next sibling
-			//		if -1, get the previous sibling
-			// tags:
-			//		private
-			kernel.deprecated(this.declaredClass+"::_getSiblingOfChild() is deprecated. Use _KeyNavMixin::_getNext() instead.", "", "2.0");
-			var children = this.getChildren(),
-				idx = array.indexOf(children, child);	// int
-			return children[idx + dir];
-		},
-
-		getIndexOfChild: function(/*dijit/_WidgetBase*/ child){
-			// summary:
-			//		Gets the index of the child in this container or -1 if not found
-			return array.indexOf(this.getChildren(), child);	// int
-		}
-	});
-});
-
-},
 'dojox/mobile/TransitionEvent':function(){
 define(["dojo/_base/declare", "dojo/on"], function(declare, on){
 
@@ -12004,891 +12888,6 @@ define([
 	}
 	
 	return css3;
-});
-
-},
-'dojo/NodeList-manipulate':function(){
-define(["./query", "./_base/lang", "./_base/array", "./dom-construct", "./NodeList-dom"], function(dquery, lang, array, construct){
-	// module:
-	//		dojo/NodeList-manipulate
-
-	/*=====
-	return function(){
-		// summary:
-		//		Adds chainable methods to dojo.query() / NodeList instances for manipulating HTML
-		//		and DOM nodes and their properties.
-	};
-	=====*/
-
-	var NodeList = dquery.NodeList;
-
-	//TODO: add a way to parse for widgets in the injected markup?
-
-	function getText(/*DOMNode*/node){
-		// summary:
-		//		recursion method for text() to use. Gets text value for a node.
-		// description:
-		//		Juse uses nodedValue so things like <br/> tags do not end up in
-		//		the text as any sort of line return.
-		var text = "", ch = node.childNodes;
-		for(var i = 0, n; n = ch[i]; i++){
-			//Skip comments.
-			if(n.nodeType != 8){
-				if(n.nodeType == 1){
-					text += getText(n);
-				}else{
-					text += n.nodeValue;
-				}
-			}
-		}
-		return text;
-	}
-
-	function getWrapInsertion(/*DOMNode*/node){
-		// summary:
-		//		finds the innermost element to use for wrap insertion.
-
-		//Make it easy, assume single nesting, no siblings.
-		while(node.childNodes[0] && node.childNodes[0].nodeType == 1){
-			node = node.childNodes[0];
-		}
-		return node; //DOMNode
-	}
-
-	function makeWrapNode(/*DOMNode||String*/html, /*DOMNode*/refNode){
-		// summary:
-		//		convert HTML into nodes if it is not already a node.
-		if(typeof html == "string"){
-			html = construct.toDom(html, (refNode && refNode.ownerDocument));
-			if(html.nodeType == 11){
-				//DocumentFragment cannot handle cloneNode, so choose first child.
-				html = html.childNodes[0];
-			}
-		}else if(html.nodeType == 1 && html.parentNode){
-			//This element is already in the DOM clone it, but not its children.
-			html = html.cloneNode(false);
-		}
-		return html; /*DOMNode*/
-	}
-
-	lang.extend(NodeList, {
-		_placeMultiple: function(/*String||Node||NodeList*/query, /*String*/position){
-			// summary:
-			//		private method for inserting queried nodes into all nodes in this NodeList
-			//		at different positions. Differs from NodeList.place because it will clone
-			//		the nodes in this NodeList if the query matches more than one element.
-			var nl2 = typeof query == "string" || query.nodeType ? dquery(query) : query;
-			var toAdd = [];
-			for(var i = 0; i < nl2.length; i++){
-				//Go backwards in DOM to make dom insertions easier via insertBefore
-				var refNode = nl2[i];
-				var length = this.length;
-				for(var j = length - 1, item; item = this[j]; j--){
-					if(i > 0){
-						//Need to clone the item. This also means
-						//it needs to be added to the current NodeList
-						//so it can also be the target of other chaining operations.
-						item = this._cloneNode(item);
-						toAdd.unshift(item);
-					}
-					if(j == length - 1){
-						construct.place(item, refNode, position);
-					}else{
-						refNode.parentNode.insertBefore(item, refNode);
-					}
-					refNode = item;
-				}
-			}
-
-			if(toAdd.length){
-				//Add the toAdd items to the current NodeList. Build up list of args
-				//to pass to splice.
-				toAdd.unshift(0);
-				toAdd.unshift(this.length - 1);
-				Array.prototype.splice.apply(this, toAdd);
-			}
-
-			return this; // dojo/NodeList
-		},
-
-		innerHTML: function(/*String|DOMNode|NodeList?*/ value){
-			// summary:
-			//		allows setting the innerHTML of each node in the NodeList,
-			//		if there is a value passed in, otherwise, reads the innerHTML value of the first node.
-			// description:
-			//		This method is simpler than the dojo/NodeList.html() method provided by
-			//		`dojo/NodeList-html`. This method just does proper innerHTML insertion of HTML fragments,
-			//		and it allows for the innerHTML to be read for the first node in the node list.
-			//		Since dojo/NodeList-html already took the "html" name, this method is called
-			//		"innerHTML". However, if dojo/NodeList-html has not been loaded yet, this
-			//		module will define an "html" method that can be used instead. Be careful if you
-			//		are working in an environment where it is possible that dojo/NodeList-html could
-			//		have been loaded, since its definition of "html" will take precedence.
-			//		The nodes represented by the value argument will be cloned if more than one
-			//		node is in this NodeList. The nodes in this NodeList are returned in the "set"
-			//		usage of this method, not the HTML that was inserted.
-			// returns:
-			//		if no value is passed, the result is String, the innerHTML of the first node.
-			//		If a value is passed, the return is this dojo/NodeList
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"></div>
-			//	|	<div id="bar"></div>
-			//		This code inserts `<p>Hello World</p>` into both divs:
-			//	|	dojo.query("div").innerHTML("<p>Hello World</p>");
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars</p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		This code returns `<p>Hello Mars</p>`:
-			//	|	var message = dojo.query("div").innerHTML();
-			if(arguments.length){
-				return this.addContent(value, "only"); // dojo/NodeList
-			}else{
-				return this[0].innerHTML; //String
-			}
-		},
-
-		/*=====
-		html: function(value){
-			// summary:
-			//		see the information for "innerHTML". "html" is an alias for "innerHTML", but is
-			//		only defined if dojo/NodeList-html has not been loaded.
-			// description:
-			//		An alias for the "innerHTML" method, but only defined if there is not an existing
-			//		"html" method on dojo/NodeList. Be careful if you are working in an environment
-			//		where it is possible that dojo/NodeList-html could have been loaded, since its
-			//		definition of "html" will take precedence. If you are not sure if dojo/NodeList-html
-			//		could be loaded, use the "innerHTML" method.
-			// value: String|DOMNode|NodeList?
-			//		The HTML fragment to use as innerHTML. If value is not passed, then the innerHTML
-			//		of the first element in this NodeList is returned.
-			// returns:
-			//		if no value is passed, the result is String, the innerHTML of the first node.
-			//		If a value is passed, the return is this dojo/NodeList
-			return; // dojo/NodeList|String
-		},
-		=====*/
-
-		text: function(/*String*/value){
-			// summary:
-			//		allows setting the text value of each node in the NodeList,
-			//		if there is a value passed in, otherwise, returns the text value for all the
-			//		nodes in the NodeList in one string.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"></div>
-			//	|	<div id="bar"></div>
-			//		This code inserts "Hello World" into both divs:
-			//	|	dojo.query("div").text("Hello World");
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars <span>today</span></p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		This code returns "Hello Mars today":
-			//	|	var message = dojo.query("div").text();
-			// returns:
-			//		if no value is passed, the result is String, the text value of the first node.
-			//		If a value is passed, the return is this dojo/NodeList
-			if(arguments.length){
-				for(var i = 0, node; node = this[i]; i++){
-					if(node.nodeType == 1){
-						construct.empty(node);
-						node.appendChild(node.ownerDocument.createTextNode(value));
-					}
-				}
-				return this; // dojo/NodeList
-			}else{
-				var result = "";
-				for(i = 0; node = this[i]; i++){
-					result += getText(node);
-				}
-				return result; //String
-			}
-		},
-
-		val: function(/*String||Array*/value){
-			// summary:
-			//		If a value is passed, allows seting the value property of form elements in this
-			//		NodeList, or properly selecting/checking the right value for radio/checkbox/select
-			//		elements. If no value is passed, the value of the first node in this NodeList
-			//		is returned.
-			// returns:
-			//		if no value is passed, the result is String or an Array, for the value of the
-			//		first node.
-			//		If a value is passed, the return is this dojo/NodeList
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<input type="text" value="foo">
-			//	|	<select multiple>
-			//	|		<option value="red" selected>Red</option>
-			//	|		<option value="blue">Blue</option>
-			//	|		<option value="yellow" selected>Yellow</option>
-			//	|	</select>
-			//		This code gets and sets the values for the form fields above:
-			//	|	dojo.query('[type="text"]').val(); //gets value foo
-			//	|	dojo.query('[type="text"]').val("bar"); //sets the input's value to "bar"
-			// 	|	dojo.query("select").val() //gets array value ["red", "yellow"]
-			// 	|	dojo.query("select").val(["blue", "yellow"]) //Sets the blue and yellow options to selected.
-
-			//Special work for input elements.
-			if(arguments.length){
-				var isArray = lang.isArray(value);
-				for(var index = 0, node; node = this[index]; index++){
-					var name = node.nodeName.toUpperCase();
-					var type = node.type;
-					var newValue = isArray ? value[index] : value;
-
-					if(name == "SELECT"){
-						var opts = node.options;
-						for(var i = 0; i < opts.length; i++){
-							var opt = opts[i];
-							if(node.multiple){
-								opt.selected = (array.indexOf(value, opt.value) != -1);
-							}else{
-								opt.selected = (opt.value == newValue);
-							}
-						}
-					}else if(type == "checkbox" || type == "radio"){
-						node.checked = (node.value == newValue);
-					}else{
-						node.value = newValue;
-					}
-				}
-				return this; // dojo/NodeList
-			}else{
-				//node already declared above.
-				node = this[0];
-				if(!node || node.nodeType != 1){
-					return undefined;
-				}
-				value = node.value || "";
-				if(node.nodeName.toUpperCase() == "SELECT" && node.multiple){
-					//A multivalued selectbox. Do the pain.
-					value = [];
-					//opts declared above in if block.
-					opts = node.options;
-					//i declared above in if block;
-					for(i = 0; i < opts.length; i++){
-						//opt declared above in if block
-						opt = opts[i];
-						if(opt.selected){
-							value.push(opt.value);
-						}
-					}
-					if(!value.length){
-						value = null;
-					}
-				}
-				return value; //String||Array
-			}
-		},
-
-		append: function(/*String||DOMNode||NodeList*/content){
-			// summary:
-			//		appends the content to every node in the NodeList.
-			// description:
-			//		The content will be cloned if the length of NodeList
-			//		is greater than 1. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the appended content.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars</p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		Running this code:
-			//	|	dojo.query("div").append("<span>append</span>");
-			//		Results in this DOM structure:
-			//	|	<div id="foo"><p>Hello Mars</p><span>append</span></div>
-			//	|	<div id="bar"><p>Hello World</p><span>append</span></div>
-			return this.addContent(content, "last"); // dojo/NodeList
-		},
-
-		appendTo: function(/*String*/query){
-			// summary:
-			//		appends nodes in this NodeList to the nodes matched by
-			//		the query passed to appendTo.
-			// description:
-			//		The nodes in this NodeList will be cloned if the query
-			//		matches more than one element. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the matched nodes from the query.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<span>append</span>
-			//	|	<p>Hello Mars</p>
-			//	|	<p>Hello World</p>
-			//		Running this code:
-			//	|	dojo.query("span").appendTo("p");
-			//		Results in this DOM structure:
-			//	|	<p>Hello Mars<span>append</span></p>
-			//	|	<p>Hello World<span>append</span></p>
-			return this._placeMultiple(query, "last"); // dojo/NodeList
-		},
-
-		prepend: function(/*String||DOMNode||NodeList*/content){
-			// summary:
-			//		prepends the content to every node in the NodeList.
-			// description:
-			//		The content will be cloned if the length of NodeList
-			//		is greater than 1. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the appended content.
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars</p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		Running this code:
-			//	|	dojo.query("div").prepend("<span>prepend</span>");
-			//		Results in this DOM structure:
-			//	|	<div id="foo"><span>prepend</span><p>Hello Mars</p></div>
-			//	|	<div id="bar"><span>prepend</span><p>Hello World</p></div>
-			return this.addContent(content, "first"); // dojo/NodeList
-		},
-
-		prependTo: function(/*String*/query){
-			// summary:
-			//		prepends nodes in this NodeList to the nodes matched by
-			//		the query passed to prependTo.
-			// description:
-			//		The nodes in this NodeList will be cloned if the query
-			//		matches more than one element. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the matched nodes from the query.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<span>prepend</span>
-			//	|	<p>Hello Mars</p>
-			//	|	<p>Hello World</p>
-			//		Running this code:
-			//	|	dojo.query("span").prependTo("p");
-			//		Results in this DOM structure:
-			//	|	<p><span>prepend</span>Hello Mars</p>
-			//	|	<p><span>prepend</span>Hello World</p>
-			return this._placeMultiple(query, "first"); // dojo/NodeList
-		},
-
-		after: function(/*String||Element||NodeList*/content){
-			// summary:
-			//		Places the content after every node in the NodeList.
-			// description:
-			//		The content will be cloned if the length of NodeList
-			//		is greater than 1. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the appended content.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars</p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		Running this code:
-			//	|	dojo.query("div").after("<span>after</span>");
-			//		Results in this DOM structure:
-			//	|	<div id="foo"><p>Hello Mars</p></div><span>after</span>
-			//	|	<div id="bar"><p>Hello World</p></div><span>after</span>
-			return this.addContent(content, "after"); // dojo/NodeList
-		},
-
-		insertAfter: function(/*String*/query){
-			// summary:
-			//		The nodes in this NodeList will be placed after the nodes
-			//		matched by the query passed to insertAfter.
-			// description:
-			//		The nodes in this NodeList will be cloned if the query
-			//		matches more than one element. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the matched nodes from the query.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<span>after</span>
-			//	|	<p>Hello Mars</p>
-			//	|	<p>Hello World</p>
-			//		Running this code:
-			//	|	dojo.query("span").insertAfter("p");
-			//		Results in this DOM structure:
-			//	|	<p>Hello Mars</p><span>after</span>
-			//	|	<p>Hello World</p><span>after</span>
-			return this._placeMultiple(query, "after"); // dojo/NodeList
-		},
-
-		before: function(/*String||DOMNode||NodeList*/content){
-			// summary:
-			//		Places the content before every node in the NodeList.
-			// description:
-			//		The content will be cloned if the length of NodeList
-			//		is greater than 1. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the appended content.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div id="foo"><p>Hello Mars</p></div>
-			//	|	<div id="bar"><p>Hello World</p></div>
-			//		Running this code:
-			//	|	dojo.query("div").before("<span>before</span>");
-			//		Results in this DOM structure:
-			//	|	<span>before</span><div id="foo"><p>Hello Mars</p></div>
-			//	|	<span>before</span><div id="bar"><p>Hello World</p></div>
-			return this.addContent(content, "before"); // dojo/NodeList
-		},
-
-		insertBefore: function(/*String*/query){
-			// summary:
-			//		The nodes in this NodeList will be placed after the nodes
-			//		matched by the query passed to insertAfter.
-			// description:
-			//		The nodes in this NodeList will be cloned if the query
-			//		matches more than one element. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		dojo/NodeList, the nodes currently in this NodeList will be returned,
-			//		not the matched nodes from the query.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<span>before</span>
-			//	|	<p>Hello Mars</p>
-			//	|	<p>Hello World</p>
-			//		Running this code:
-			//	|	dojo.query("span").insertBefore("p");
-			//		Results in this DOM structure:
-			//	|	<span>before</span><p>Hello Mars</p>
-			//	|	<span>before</span><p>Hello World</p>
-			return this._placeMultiple(query, "before"); // dojo/NodeList
-		},
-
-		/*=====
-		remove: function(simpleFilter){
-			// summary:
-			//		alias for dojo/NodeList's orphan method. Removes elements
-			//		in this list that match the simple filter from their parents
-			//		and returns them as a new NodeList.
-			// simpleFilter: String
-			//		single-expression CSS rule. For example, ".thinger" or
-			//		"#someId[attrName='value']" but not "div > span". In short,
-			//		anything which does not invoke a descent to evaluate but
-			//		can instead be used to test a single node is acceptable.
-
-			return; // dojo/NodeList
-		},
-		=====*/
-		remove: NodeList.prototype.orphan,
-
-		wrap: function(/*String||DOMNode*/html){
-			// summary:
-			//		Wrap each node in the NodeList with html passed to wrap.
-			// description:
-			//		html will be cloned if the NodeList has more than one
-			//		element. Only DOM nodes are cloned, not any attached
-			//		event handlers.
-			// returns:
-			//		the nodes in the current NodeList will be returned,
-			//		not the nodes from html argument.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<b>one</b>
-			//	|	<b>two</b>
-			//		Running this code:
-			//	|	dojo.query("b").wrap("<div><span></span></div>");
-			//		Results in this DOM structure:
-			//	|	<div><span><b>one</b></span></div>
-			//	|	<div><span><b>two</b></span></div>
-			if(this[0]){
-				html = makeWrapNode(html, this[0]);
-
-				//Now cycle through the elements and do the insertion.
-				for(var i = 0, node; node = this[i]; i++){
-					//Always clone because if html is used to hold one of
-					//the "this" nodes, then on the clone of html it will contain
-					//that "this" node, and that would be bad.
-					var clone = this._cloneNode(html);
-					if(node.parentNode){
-						node.parentNode.replaceChild(clone, node);
-					}
-					//Find deepest element and insert old node in it.
-					var insertion = getWrapInsertion(clone);
-					insertion.appendChild(node);
-				}
-			}
-			return this; // dojo/NodeList
-		},
-
-		wrapAll: function(/*String||DOMNode*/html){
-			// summary:
-			//		Insert html where the first node in this NodeList lives, then place all
-			//		nodes in this NodeList as the child of the html.
-			// returns:
-			//		the nodes in the current NodeList will be returned,
-			//		not the nodes from html argument.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div class="container">
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			//		Running this code:
-			//	|	dojo.query(".red").wrapAll('<div class="allRed"></div>');
-			//		Results in this DOM structure:
-			//	|	<div class="container">
-			// 	|		<div class="allRed">
-			// 	|			<div class="red">Red One</div>
-			// 	|			<div class="red">Red Two</div>
-			// 	|		</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			if(this[0]){
-				html = makeWrapNode(html, this[0]);
-
-				//Place the wrap HTML in place of the first node.
-				this[0].parentNode.replaceChild(html, this[0]);
-
-				//Now cycle through the elements and move them inside
-				//the wrap.
-				var insertion = getWrapInsertion(html);
-				for(var i = 0, node; node = this[i]; i++){
-					insertion.appendChild(node);
-				}
-			}
-			return this; // dojo/NodeList
-		},
-
-		wrapInner: function(/*String||DOMNode*/html){
-			// summary:
-			//		For each node in the NodeList, wrap all its children with the passed in html.
-			// description:
-			//		html will be cloned if the NodeList has more than one
-			//		element. Only DOM nodes are cloned, not any attached
-			//		event handlers.
-			// returns:
-			//		the nodes in the current NodeList will be returned,
-			//		not the nodes from html argument.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div class="container">
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			//		Running this code:
-			//	|	dojo.query(".red").wrapInner('<span class="special"></span>');
-			//		Results in this DOM structure:
-			//	|	<div class="container">
-			// 	|		<div class="red"><span class="special">Red One</span></div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red"><span class="special">Red Two</span></div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			if(this[0]){
-				html = makeWrapNode(html, this[0]);
-				for(var i = 0; i < this.length; i++){
-					//Always clone because if html is used to hold one of
-					//the "this" nodes, then on the clone of html it will contain
-					//that "this" node, and that would be bad.
-					var clone = this._cloneNode(html);
-
-					//Need to convert the childNodes to an array since wrapAll modifies the
-					//DOM and can change the live childNodes NodeList.
-					this._wrap(lang._toArray(this[i].childNodes), null, this._NodeListCtor).wrapAll(clone);
-				}
-			}
-			return this; // dojo/NodeList
-		},
-
-		replaceWith: function(/*String||DOMNode||NodeList*/content){
-			// summary:
-			//		Replaces each node in ths NodeList with the content passed to replaceWith.
-			// description:
-			//		The content will be cloned if the length of NodeList
-			//		is greater than 1. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		The nodes currently in this NodeList will be returned, not the replacing content.
-			//		Note that the returned nodes have been removed from the DOM.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div class="container">
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			//		Running this code:
-			//	|	dojo.query(".red").replaceWith('<div class="green">Green</div>');
-			//		Results in this DOM structure:
-			//	|	<div class="container">
-			// 	|		<div class="green">Green</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="green">Green</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			content = this._normalize(content, this[0]);
-			for(var i = 0, node; node = this[i]; i++){
-				this._place(content, node, "before", i > 0);
-				node.parentNode.removeChild(node);
-			}
-			return this; // dojo/NodeList
-		},
-
-		replaceAll: function(/*String*/query){
-			// summary:
-			//		replaces nodes matched by the query passed to replaceAll with the nodes
-			//		in this NodeList.
-			// description:
-			//		The nodes in this NodeList will be cloned if the query
-			//		matches more than one element. Only the DOM nodes are cloned, not
-			//		any attached event handlers.
-			// returns:
-			//		The nodes currently in this NodeList will be returned, not the matched nodes
-			//		from the query. The nodes currently in this NodeLIst could have
-			//		been cloned, so the returned NodeList will include the cloned nodes.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div class="container">
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			//		Running this code:
-			//	|	dojo.query(".red").replaceAll(".blue");
-			//		Results in this DOM structure:
-			//	|	<div class="container">
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="spacer">___</div>
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="red">Red Two</div>
-			//	|	</div>
-			var nl = dquery(query);
-			var content = this._normalize(this, this[0]);
-			for(var i = 0, node; node = nl[i]; i++){
-				this._place(content, node, "before", i > 0);
-				node.parentNode.removeChild(node);
-			}
-			return this; // dojo/NodeList
-		},
-
-		clone: function(){
-			// summary:
-			//		Clones all the nodes in this NodeList and returns them as a new NodeList.
-			// description:
-			//		Only the DOM nodes are cloned, not any attached event handlers.
-			// returns:
-			//		a cloned set of the original nodes.
-			// example:
-			//		assume a DOM created by this markup:
-			//	|	<div class="container">
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="blue">Blue Two</div>
-			//	|	</div>
-			//		Running this code:
-			//	|	dojo.query(".red").clone().appendTo(".container");
-			//		Results in this DOM structure:
-			//	|	<div class="container">
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="blue">Blue One</div>
-			// 	|		<div class="red">Red Two</div>
-			// 	|		<div class="blue">Blue Two</div>
-			// 	|		<div class="red">Red One</div>
-			// 	|		<div class="red">Red Two</div>
-			//	|	</div>
-
-			//TODO: need option to clone events?
-			var ary = [];
-			for(var i = 0; i < this.length; i++){
-				ary.push(this._cloneNode(this[i]));
-			}
-			return this._wrap(ary, this, this._NodeListCtor); // dojo/NodeList
-		}
-	});
-
-	//set up html method if one does not exist
-	if(!NodeList.prototype.html){
-		NodeList.prototype.html = NodeList.prototype.innerHTML;
-	}
-
-	return NodeList;
-});
-
-},
-'dojox/mobile/RoundRectList':function(){
-define([
-	"dojo/_base/array",
-	"dojo/_base/declare",
-	"dojo/_base/event",
-	"dojo/_base/lang",
-	"dojo/_base/window",
-	"dojo/dom-construct",
-	"dojo/dom-attr",
-	"dijit/_Contained",
-	"dijit/_Container",
-	"dijit/_WidgetBase"
-], function(array, declare, event, lang, win, domConstruct, domAttr, Contained, Container, WidgetBase){
-
-	// module:
-	//		dojox/mobile/RoundRectList
-
-	return declare("dojox.mobile.RoundRectList", [WidgetBase, Container, Contained], {
-		// summary:
-		//		A rounded rectangle list.
-		// description:
-		//		RoundRectList is a rounded rectangle list, which can be used to
-		//		display a group of items. Each item must be a dojox/mobile/ListItem.
-
-		// transition: String
-		//		The default animated transition effect for child items.
-		transition: "slide",
-
-		// iconBase: String
-		//		The default icon path for child items.
-		iconBase: "",
-
-		// iconPos: String
-		//		The default icon position for child items.
-		iconPos: "",
-
-		// select: String
-		//		Selection mode of the list. The check mark is shown for the
-		//		selected list item(s). The value can be "single", "multiple", or "".
-		//		If "single", there can be only one selected item at a time.
-		//		If "multiple", there can be multiple selected items at a time.
-		//		If "", the check mark is not shown.
-		select: "",
-
-		// stateful: Boolean
-		//		If true, the last selected item remains highlighted.
-		stateful: false,
-
-		// syncWithViews: [const] Boolean
-		//		If true, this widget listens to view transition events to be
-		//		synchronized with view's visibility.
-		//		Note that changing the value of the property after the widget
-		//		creation has no effect.
-		syncWithViews: false,
-
-		// editable: [const] Boolean
-		//		If true, the list can be reordered.
-		//		Note that changing the value of the property after the widget
-		//		creation has no effect.
-		editable: false,
-
-		// tag: String
-		//		A name of html tag to create as domNode.
-		tag: "ul",
-
-		/* internal properties */
-		// editableMixinClass: String
-		//		The name of the mixin class.
-		editableMixinClass: "dojox/mobile/_EditableListMixin",
-		
-		// baseClass: String
-		//		The name of the CSS class of this widget.
-		baseClass: "mblRoundRectList",
-		
-		// filterBoxClass: String
-		//		The name of the CSS class added to the DOM node inside which is placed the 
-		//		dojox/mobile/SearchBox created when mixing dojox/mobile/FilteredListMixin.
-		//		The default value is "mblFilteredRoundRectListSearchBox".  
-		filterBoxClass: "mblFilteredRoundRectListSearchBox",
-
-		buildRendering: function(){
-			this.domNode = this.srcNodeRef || domConstruct.create(this.tag);
-			if(this.select){
-				domAttr.set(this.domNode, "role", "listbox");
-				if(this.select === "multiple"){
-					domAttr.set(this.domNode, "aria-multiselectable", "true");
-				}
-			}
-			this.inherited(arguments);
-		},
-
-		postCreate: function(){
-			if(this.editable){
-				require([this.editableMixinClass], lang.hitch(this, function(module){
-					declare.safeMixin(this, new module());
-				}));
-			}
-			this.connect(this.domNode, "onselectstart", event.stop);
-
-			if(this.syncWithViews){ // see also TabBar#postCreate
-				var f = function(view, moveTo, dir, transition, context, method){
-					var child = array.filter(this.getChildren(), function(w){
-						return w.moveTo === "#" + view.id || w.moveTo === view.id; })[0];
-					if(child){ child.set("selected", true); }
-				};
-				this.subscribe("/dojox/mobile/afterTransitionIn", f);
-				this.subscribe("/dojox/mobile/startView", f);
-			}
-		},
-
-		resize: function(){
-			// summary:
-			//		Calls resize() of each child widget.
-			array.forEach(this.getChildren(), function(child){
-				if(child.resize){ child.resize(); }
-			});
-		},
-
-		onCheckStateChanged: function(/*Widget*//*===== listItem, =====*/ /*String*//*===== newState =====*/){
-			// summary:
-			//		Stub function to connect to from your application.
-			// description:
-			//		Called when the check state has been changed.
-		},
-
-		_setStatefulAttr: function(stateful){
-			// tags:
-			//		private
-			this._set("stateful", stateful);
-			this.selectOne = stateful;
-			array.forEach(this.getChildren(), function(child){
-				child.setArrow && child.setArrow();
-			});
-		},
-
-		deselectItem: function(/*dojox/mobile/ListItem*/item){
-			// summary:
-			//		Deselects the given item.
-			item.set("selected", false);
-		},
-
-		deselectAll: function(){
-			// summary:
-			//		Deselects all the items.
-			array.forEach(this.getChildren(), function(child){
-				child.set("selected", false);
-			});
-		},
-
-		selectItem: function(/*ListItem*/item){
-			// summary:
-			//		Selects the given item.
-			item.set("selected", true);
-		}
-	});
 });
 
 },
@@ -15301,11 +15300,11 @@ define(["./_base/kernel", "require", "./has", "./_base/array", "./_base/config",
 });
 
 },
-'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojo/store/Observable\",\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile/common\",\n        \"dojox/mobile/deviceTheme\",\n        /* For build to include css3/lite query selectorEngine */\n        \"dojo/selector/lite\",\n        //Need to inlclude dependency for model stores across views\n        \"dojo/store/Memory\",\n        \"dojo/store/JsonRest\"\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"myapp.dataItems\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": [{\"label\":\"North Carolina\", \"rightText\":\"Raleigh\"},\n                         {\"label\":\"Virginia\",       \"rightText\":\"Richmond\"}\n                        ],\n                \"idProperty\":\"label\"\n            }\n        },\n        \"jsonStore\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"observable\": true,\n            \"params\": {\n                \"target\": \"app/resources/data/rest/items.json\"\n            }\n        },\n        \"mongodbStore\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"observable\": true,\n            \"params\": {\n                \"target\": \"http://localhost:3000/items\"\n            }\n        }\n    },\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            \"dependencies\":[\n                \"dojox/mobile/RoundRectList\",\n                \"dojox/mobile/ListItem\",\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\",\n                \"dojox/mobile/TextBox\",\n                \"dojox/mobile/RoundRectCategory\"\n            ],\n            \"stores\": {\n                \"store3\":{\n                    \"type\": \"dojo/store/Memory\",\n                    \"observable\": true,\n                    \"params\": { // parameters used to initialize the data store\n                        \"data\": [{\"field\":\"name\",     \"value\":\"Carlos Santana\", \"art\":\"mblDomButtonCheck\"},\n                                 {\"field\":\"twitter\",  \"value\":\"@csantanapr\", \"art\":\"mblDomButtonRedBall\"}\n                                ],\n                        \"idProperty\":\"field\"\n                    }\n                }\n            },\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\",\n             \"dependencies\":[\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\"\n            ]\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
+'url:app/config.json':"{\n    //Mandatory\n    \"id\": \"App\",\n    //Optional\n    \"name\": \"Boilerplate-App\",\n    //Optional\n    \"description\": \"Sample Boilerplate-App to help devs get starteds\",\n    //Optional, but very useful for views properties\n    \"loaderConfig\": {\n        \"paths\": {\n            \"app\": \"../app\"\n        }\n    },\n    /*\n    //Optional, default is \"dojox/css3/transit\"\n    \"transit\": \"dojox/css3/transit\",\n    */\n    //Optional, but required when not using the parser, and its required by views\n    \"dependencies\": [\n        \"dojo/store/Observable\",\n        \"dojox/app/controllers/History\",\n        \"dojox/app/controllers/HistoryHash\",\n        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */\n        \"dojox/mobile/common\",\n        \"dojox/mobile/deviceTheme\",\n        /* For build to include css3/lite query selectorEngine */\n        \"dojo/selector/lite\",\n        //Need to inlclude dependency for model stores across views\n        \"dojo/store/Memory\",\n        \"dojo/store/JsonRest\"\n\n\n    ],\n    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle\n    \"modules\": [\n    ],\n    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller\n    \"controllers\": [\n        //listens to \"app-init, app-load\"\n        \"dojox/app/controllers/Load\",\n        //listens to \"app-transition, app-domNode\"\n        \"dojox/app/controllers/Transition\",\n        //listens to \"app-initLayout,app-layoutVIew,app-resize\"\n        \"dojox/app/controllers/Layout\"\n    ],\n    //Optional, App levels stores shared with views\n    \"stores\": {\n        \"store1\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": \"myapp.dataItems\"\n            }\n        },\n        \"store2\":{\n            \"type\": \"dojo/store/Memory\",\n            \"observable\": true,\n            \"params\": { // parameters used to initialize the data store\n                \"data\": [{\"label\":\"North Carolina\", \"rightText\":\"Raleigh\"},\n                         {\"label\":\"Virginia\",       \"rightText\":\"Richmond\"}\n                        ],\n                \"idProperty\":\"label\"\n            }\n        },\n        \"jsonStore\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"observable\": true,\n            \"params\": {\n                \"target\": \"app/resources/data/rest/items.json\"\n            }\n        },\n        \"mongodbStore\":{\n            \"type\": \"dojo/store/JsonRest\",\n            \"observable\": true,\n            \"params\": {\n                \"target\": \"http://localhost:3000/items\"\n            }\n        }\n    },\n\n    //Optional\n    \"template\": \"app/views/app.html\",\n\n    //Optional, other examples are \"flip, none\"\n    \"defaultTransition\": \"slide\",\n    //Mandatory, one or a set of views view1+view2+view3\n    \"defaultView\": \"view1\",\n\n    //Optional, App level stings\n    \"nls\": \"app/nls/app_strings\",\n    //Mandatory, Specify Application child views\n    \"views\": {\n        \"view1\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view1/view1.html\",\n\n            //Optional, listens to View.emit events\n            //  init\n            //  beforeActivate\n            //  afterActivate\n            //  beforeDeactivate\n            //  afterDeactivate\n            //  destroy\n            \"controller\": \"app/views/view1/view1Ctrl.js\",\n            //Optional, overwrites the transition type only for this view\n            \"transition\": \"slide\",\n            //Optional, view level strings they get mixed into global nls object\n            \"nls\": \"app/views/view1/nls/view1_strings\",\n            //Optional, dependencies for this specific view, declare in template\n            //\"dependencies\":[\n            //],\n            \"stores\": {\n                \"store3\":{\n                    \"type\": \"dojo/store/Memory\",\n                    \"observable\": true,\n                    \"params\": { // parameters used to initialize the data store\n                        \"data\": [{\"field\":\"name\",     \"value\":\"Carlos Santana\", \"art\":\"mblDomButtonCheck\"},\n                                 {\"field\":\"twitter\",  \"value\":\"@csantanapr\", \"art\":\"mblDomButtonRedBall\"}\n                                ],\n                        \"idProperty\":\"field\"\n                    }\n                }\n            },\n        },\n        \"view2\":{\n            //Mandatory for defaultViews\n            \"template\": \"app/views/view2/view2.html\",\n             \"transition\": \"slide\",\n             \"dependencies\":[\n                \"dojox/mobile/Button\",\n                \"dojox/mobile/RoundRectStoreList\"\n            ]\n        }\n    },\n    \"has\": {\n        \"html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/History\"\n            ]\n        },\n        \"!html5history\": {\n            \"controllers\": [\n                \"dojox/app/controllers/HistoryHash\"\n            ]\n        }\n    }\n}\n",
 'url:app/resources/data/items.json':"{\n    \"identifier\": \"id\",\n    \"items\": [\n        {\n            \"id\": \"10001\",\n            \"label\": \"Dojo\",\n            \"rightText\": \"1.9.1\"\n        },\n        {\n            \"id\": \"10002\",\n            \"label\": \"JQuery\",\n            \"rightText\": \"1.10.2\"\n        }\n    ]\n}",
 'url:app/views/app.html':"<div>\n    <div class=\"navPane\" data-app-constraint=\"top\">\n        <select id=\"sel1\" onchange=\"(function changeTheme(){location.replace('?theme='+event.target.value);}())\"> \n            <option value=\"\">${nls.switch_theme}</option>\n            <option value=\"iPhone\">iPhone</option>\n            <option value=\"iPad\">iPad</option>\n            <option value=\"Android\">Android</option>\n            <option value=\"Holodark\">Holodark</option>\n            <option value=\"BlackBerry\">BlackBerry</option>\n            <option value=\"WindowsPhone\">WindowsPhone</option>\n            <option value=\"Custom\">${nls.custom}</option>\n\t    </select>\n        <br>\n        <div>${nls.app_template_title}</div>\n        <div>${nls.app_string}</div>\n    </div>\n\n</div>\n",
-'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n  <!-- Access View properties and nls strings without a View Controller -->\n  <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n  <div>$ {name} = ${name}</div>\n  <div>$ {template} = ${template}</div>\n  <div>$ {nls.app_string} = ${nls.app_string}</div>\n  <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n  <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n  -->\n  <div>$ {aNumber}  = ${aNumber}</div>\n  <div>$ {aString} = ${aString}</div>\n  <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n  <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n  <div>$ {aBoolean} = ${aBoolean}</div>\n  <div>$ {aNull} = ${aNull}</div>\n  <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n  <!-- Access A different locale -->\n  <a href=\"${nls.locale_link}\"> ${nls.locale_msg} ${nls.locale_link}</a>\n\n  <!-- Transition to a different view using ListItem 'startTransition' Event -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n      ${nls.go_to} ${nls.view} 2\n    </li>\n  </ul>\n\n  <!-- Access functions on the View Controller -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n    <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\">\n      ${nls.doSomething}\n    </li>\n    <!-- View Controller will use id to attach an Event listener on this button -->\n    <li data-dojo-type=\"dojox/mobile/Button\" id=\"doSomethingOnce\" >\n      ${nls.doSomething} ${nls.once}\n    </li>\n    <li>\n      <!-- View Controller will use to display output from doSomething() -->\n      <input data-dojo-type=\"dojox/mobile/TextBox\" type=\"text\" >\n    </input>\n  </li>\n</ul>\n<!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"dataItems3\"\ndata-dojo-props=\"store: this.loadedStores.store3,\nitemMap:{field:'label', value:'rightText', art:'icon'}\">\n</ul>\n\n<h2 data-dojo-type=\"dojox/mobile/RoundRectCategory\">${nls.email}</h2>\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"restItems1\"\ndata-dojo-props=\"store: this.loadedStores.jsonStore,\nitemMap:{name:'label', count:'rightText'}\">\n</ul>\n\n<h2 data-dojo-type=\"dojox/mobile/RoundRectCategory\">${nls.nodejs}-${nls.mongodb}</h2>\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"restItems2\"\ndata-dojo-props=\"store: this.loadedStores.mongodbStore,\nitemMap:{firstname:'label', lastname:'rightText'}\">\n</ul>\n\n</div>\n",
 'url:app/views/view2/view2.html':"<div class=\"view view2\">\n  <div>\n    <button data-dojo-type=\"dojox/mobile/Button\" onclick=\"event.target.dispatchEvent(new CustomEvent('startTransition', {\n    'bubbles':true,\n    'cancelable':true,\n    'detail':   {\n    target: 'view1',\n    url: '#view1',\n    transitionDir: -1\n  }\n}));\"\n>${nls.back_dispatchEvent}\n</button>\n</div>\n<div>\n  <button data-dojo-type=\"dojox/mobile/Button\" onclick=\"App.transitionToView(event.target, {\n  'target': 'view1',\n  'url': '#view1',\n  'transitionDir': -1\n}, event);\">${nls.back_transitionToView}\n</button>\n</div>\n\n<div>${name}</div>\n<div>${template}</div>\n<div>${nls.app_string}</div>\n\n<!-- Render Data from json data via dojo/store -->\n<!-- Example loading data from .json file -->\n<ul     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"dataItems1\"\ndata-dojo-props=\"store: this.loadedStores.store1\">\n</ul>\n<!-- Example loading data from static data in config.json -->\n<ul     data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"dataItems2\"\ndata-dojo-props=\"store: this.loadedStores.store2\">\n</ul>\n\n\n</div>\n",
+'url:app/views/view1/view1.html':"<div class=\"view view1 mblView\">\n\n  <!-- Access View properties and nls strings without a View Controller -->\n  <div>$ {nls.view1_template_title} = ${nls.view1_template_title}</div>\n  <div>$ {name} = ${name}</div>\n  <div>$ {template} = ${template}</div>\n  <div>$ {nls.app_string} = ${nls.app_string}</div>\n  <div>$ {nls.view1_string} = ${nls.view1_string}</div>\n\n\n  <!-- Access primitive properties from View Controller -->\n    <!-- As defined on View Controller\n    'aNumber'    : 42,\n    'aString'    : 'aString',\n    'aStringScapedQuotes'    : 'Got to View 2:<a href=\"index.html#view2\">click</a>',\n    'aBoolean'   : true,\n    'aNull'      : null,\n  -->\n  <div>$ {aNumber}  = ${aNumber}</div>\n  <div>$ {aString} = ${aString}</div>\n  <div>$ {aString:_formatterTmpl} = ${aString:_formatterTmpl}</div>\n  <div>$ {!aStringScapedQuotes} = ${!aStringScapedQuotes}</div>\n  <div>$ {aBoolean} = ${aBoolean}</div>\n  <div>$ {aNull} = ${aNull}</div>\n  <div>$ {aNull:_formatterTmpl} = ${aNull:_formatterTmpl}</div>\n\n  <!-- Access A different locale -->\n  <a href=\"${nls.locale_link}\"> ${nls.locale_msg} ${nls.locale_link}</a>\n\n  <!-- Transition to a different view using ListItem 'startTransition' Event -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <li data-dojo-type=\"dojox/mobile/ListItem\" data-dojo-props=\"clickable:true,target:'view2',url:'#view2'\">\n      ${nls.go_to} ${nls.view} 2\n    </li>\n  </ul>\n\n  <!-- Access functions on the View Controller -->\n  <ul data-dojo-type=\"dojox/mobile/RoundRectList\">\n    <!-- Run function from View Controller by assigning ListItem onClick to a function -->\n    <li data-dojo-type=\"dojox/mobile/Button\" data-dojo-attach-event=\"onClick:doSomething\">\n      ${nls.doSomething}\n    </li>\n    <!-- View Controller will use id to attach an Event listener on this button -->\n    <li data-dojo-type=\"dojox/mobile/Button\" id=\"doSomethingOnce\" >\n      ${nls.doSomething} ${nls.once}\n    </li>\n    <li>\n      <!-- View Controller will use to display output from doSomething() -->\n      <input data-dojo-type=\"dojox/mobile/TextBox\" type=\"text\" >\n    </input>\n  </li>\n</ul>\n<!-- Example loading data for private store only for this view that doesn't map to ListItem properties -->\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"dataItems3\"\ndata-dojo-props=\"store: this.loadedStores.store3,\nitemMap:{field:'label', value:'rightText', art:'icon'}\">\n</ul>\n\n<h2 data-dojo-type=\"dojox/mobile/RoundRectCategory\">${nls.email}</h2>\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"restItems1\"\ndata-dojo-props=\"store: this.loadedStores.jsonStore,\nitemMap:{name:'label', count:'rightText'}\">\n</ul>\n\n<h2 data-dojo-type=\"dojox/mobile/RoundRectCategory\">${nls.nodejs}-${nls.mongodb}</h2>\n<ul data-dojo-type=\"dojox/mobile/RoundRectStoreList\"\ndata-dojo-attach-point=\"restItems2\"\ndata-dojo-props=\"store: this.loadedStores.mongodbStore,\nitemMap:{firstname:'label', lastname:'rightText'}\">\n</ul>\n\n</div>\n",
 '*now':function(r){r(['dojo/i18n!*preload*app/nls/main*["ar","ca","cs","da","de","el","en","en-gb","en-us","es","es-es","fi","fi-fi","fr","fr-fr","he","he-il","hu","it","it-it","ja","ja-jp","ko","ko-kr","nl","nl-nl","nb","pl","pt","pt-br","pt-pt","ru","sk","sl","sv","th","tr","zh","zh-tw","zh-cn","ROOT"]']);}
 }});
 /*global define, console*/
@@ -15342,7 +15341,6 @@ define([
     //TODO: add all html templates being use in config.json to force them to be included in layer
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
-    'dojo/text!app/views/view1/view1.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
 ], function (win, has, require, Application, json, config, data) {
