@@ -11,12 +11,13 @@ A Starter Kit for Single Page Apps
 Quick Start
 -----------
 
-1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git`
-2. Develop your project in `src/app/` using html,css,js until it is amazing.
-3. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
-4. Run `cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
-5. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
-6. (Optional) Run nodejs rest service with mongodb `mongod` and `node server`
+1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git` then `cd dapp-boilerplate`
+2. Install dependencies `npm install` or `sudo npm install`
+3. Develop your project in `src/app/` using html,css,js until it is amazing.
+4. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
+5. Run `cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
+6. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
+7. (Optional) Run nodejs rest service with mongodb `mongod` and `node server`
 
 
 ### Windows Users
