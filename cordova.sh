@@ -34,7 +34,7 @@ cd $CDV_APP_PATH
 
 cordova platform add ios
 
-#cordova platform add android
+cordova platform add android
 
 
 

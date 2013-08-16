@@ -69,6 +69,14 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+#### Version 0.1.3
+- Added Android platform as default in cordova.sh
+
+#### Version 0.1.2
+- Fix Build Scripts to include local path
+- Fix npm package.json to include uglify-js
+- Updated Readme to indicate user to run `npm install`
+
 #### Version 0.1.0
 - Build Scripts
   - Fast dojo builds using uglifyjs
@@ -82,10 +90,7 @@ Change Log
   - Object Stores Stores (Memory, MongoDB-JSONREST)
   - Dojo Mobile UI
 - Integration with new Apache Cordova 3.0 CLI
-#### Version 0.1.2
-- Fix Build Scripts to include local path
-- Fix npm package.json to include uglify-js
-- Updated Readme to indicate user to run `npm install`
+
 
 
 
