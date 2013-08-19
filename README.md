@@ -2,8 +2,7 @@ A Starter Kit for SPA (Single Page Apps)
 ===
 
 - The Boilerplate is a set of files to help you rapidly get up and running a SPA 
-- It illustrates some basic best practices when working with SPA.
-- Helps you build your SPA which some times consume a lot of time when starting a new SPA
+- Helps you build your SPA which some times consumes a lot of time when starting a new SPA
 - The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
 
 Clone
@@ -17,7 +16,7 @@ Node and cli dependencies use [NPM](http://npmjs.org):
 
     npm install
 
-JavaScript use [Bower](http://bower.io) or [Volo](http://volpjs.org)
+JavaScript use [Bower](http://bower.io) or [Volo](http://volojs.org)
 
     bower install
     or
@@ -92,7 +91,7 @@ Useful resources
 About the boilerplate
 ---------------------
 
-- This project started because I always spent a few weeks getting started with a new version of Dojo, and want to give it a try to the MV* DApp Framework to see how it can be improved.
+- This project started because I always spent a few weeks getting started with a new version of Dojo, and want to give a try to the MV* dApp Framework.
 - This boilerplate is constantly updated to try to reflect the latest and
 greatest features and design patterns for developing Single Page App, but
 it relies heavily on information and contributions from other users.
@@ -104,6 +103,9 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+#### Version 0.1.4
+- Implemented JS lib dependencies using components with bower or volo
+
 #### Version 0.1.3
 - Added Android platform as default in cordova.sh
 
@@ -133,8 +135,6 @@ Future
 ---
 - Automate build and test tasks
   - Add support for Grunt Tasks
-- Integrate component management
-  - Add support for bower or volo
 - Integrate Automation Testing
   - Add unit tests (i.e. Jasmine or Mocha)
   - Add functional testing (Webdriver API)
@@ -145,8 +145,6 @@ Future
 - Examples on how to integrate Dojox/App with other Projects:
   - [Handlebars](http://handlebarsjs.com)
   - [JQuery](http://jquery.com)
-  - [NodeJS](http://nodejs.org)
-  - [MongoDB](http://www.mongodb.org)
 - Education resources on [dApp website](http://csantanapr.github.io/dapp-boilerplate)
   - Getting Started
   - Screencasts
