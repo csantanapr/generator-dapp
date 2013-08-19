@@ -1,6 +1,6 @@
 /*jslint nomen: true */
-/*jshint nomen: true */
 /*global _, define, console, alert */
+
 define([
     'dojo/query!css3',
     //query is the core of dojo dom query
@@ -18,15 +18,14 @@ define([
 ], function ($, on) {
     'use strict';
 
-    var handles,
-        view,
+    var view,
         viewNode,
         count = 0;
 
 
 
     return {
-        init: function (params) {
+        init: function () {
             // summary:
             //      view life cycle init()
             console.log(this.name + " view:init()");
@@ -37,16 +36,17 @@ define([
 
         },
 
-        beforeActivate: function (view, data) {
+        beforeActivate: function (previousView, data) {
             // summary:
             //      view life cycle beforeActivate()
-            console.log(this.name + " view:beforeActivate(view,data)");
+            console.log(this.name + " view:beforeActivate(" + (previousView ? previousView.name : "") + ",data)" + data);
         },
 
-        afterActivate: function (view, data) {
+        afterActivate: function (previousView, data) {
             // summary:
             //      view life cycle afterActivate()
-            console.log(this.name + " view:afterActivate(view,data)");
+            console.log(this.name + " view:afterActivate(" + (previousView ? previousView.name : "") + ",data)" + data);
+
             //Atach onclick event to fire once
             // TIP: Always scope your query selector to the View using viewNode
             on.once($("#doSomethingOnce", viewNode), "click", this.doSomething);
@@ -59,19 +59,19 @@ define([
 
         },
 
-        beforeDeactivate: function (view, data) {
+        beforeDeactivate: function (nextView, data) {
             // summary:
             //      view life cycle beforeDeactivate()
-            console.log(this.name + " view:beforeDeactivate(view,data)");
+            console.log(this.name + " view:beforeDeactivate(" + (nextView ? nextView.name : "") + ",data)" + data);
         },
 
-        afterDeactivate: function (view, data) {
+        afterDeactivate: function (nextView, data) {
             // summary:
             //      view life cycle afterDeactivate()
-            console.log(this.name + " view:afterDeactivate(view,data)");
+            console.log(this.name + " view:afterDeactivate(" + (nextView ? nextView.name : "") + ",data)" + data);
         },
 
-        destroy: function (params) {
+        destroy: function () {
             // summary:
             //      view life cycle destroy()
             console.log(this.name + " view:destory()");
@@ -100,7 +100,7 @@ define([
             return value;
 
         },
-        doSomething: function (event) {
+        doSomething: function () {
             console.log('did something');
             // TIP: Always scope your query selector to the View using viewNode
             //Use jquery syntax here .val() and .sytle() depends on loading dojo/NodeList-manipulate

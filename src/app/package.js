@@ -1,3 +1,5 @@
+/*jslint unparam: true */
+
 /**
  * This file is referenced by the `dojoBuild` key in `package.json` and provides extra hinting specific to the Dojo
  * build system about how certain files in the package need to be handled at build time. Build profiles for the
@@ -29,7 +31,7 @@ var profile = {
 
         //If you see 303 errors in dojo build is because your package is missing this line
         //to state to all html files as declarative
-        declarative: function (filename) {
+        declarative: function (filename, mid) {
             'use strict';
             return (/\.html?$/).test(filename); // tags any .html or .htm files as declarative
         },
@@ -45,6 +47,7 @@ var profile = {
         // Files that should not be copied when the `mini` build flag is set to true.
         // In this case, we are excluding this package configuration file which is not necessary in a built copy of
         // the application.
+
         miniExclude: function (filename, mid) {
             'use strict';
             var list = {
@@ -55,5 +58,6 @@ var profile = {
             }
             return false;
         }
+
     }
 };

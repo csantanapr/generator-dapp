@@ -1,6 +1,5 @@
 /*global define, console*/
 /*jslint todo: true */
-/*jshint todo: true */
 
 /**
  * This file is the application's main JavaScript file. It is listed as a dependency in run.js and will automatically
@@ -24,7 +23,6 @@
 define([
     'dojo/_base/window',
     'dojo/sniff',
-    'require',
     'dojox/app/main',
     'dojox/json/ref',
     'dojo/text!app/config.json',
@@ -35,7 +33,7 @@ define([
     'dojo/text!app/views/app.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
-], function (win, has, require, Application, json, config, data, dojoConfig) {
+], function (win, has, Application, json, config, data, dojoConfig) {
     'use strict';
     var appConfig = json.fromJson(config);
 
