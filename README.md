@@ -1,24 +1,59 @@
-A Starter Kit for Single Page Apps
+A Starter Kit for SPA (Single Page Apps)
 ===
 
-- The dApp Boilerplate is a set of files to help you rapidly get up and running with the dapp mvc framework.
-- It illustrates some basic best practices when working with Single Web Page Apps.
-- Helps you build your App which is some time the most difficult of working with
-- The Single Page App is built to be use on creating a Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
-- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project.
+- The Boilerplate is a set of files to help you rapidly get up and running a SPA 
+- It illustrates some basic best practices when working with SPA.
+- Helps you build your SPA which some times consume a lot of time when starting a new SPA
+- The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
 
+Clone
+---
+    git clone https://github.com/csantanapr/dapp-boilerplate.git
+    cd dapp-boilerplate
 
-Quick Start
------------
+Dependencies
+---
+Node and cli dependencies use [NPM](http://npmjs.org):
 
-1. Clone the repository using `git clone --recursive https://github.com/csantanapr/dapp-boilerplate.git` then `cd dapp-boilerplate`
-2. Install dependencies `npm install` or `sudo npm install`
-3. Develop your project in `src/app/` using html,css,js until it is amazing.
-4. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
-5. Run `cordova.sh` builds a Native App using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
-6. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App
-7. (Optional) Run nodejs rest service with mongodb `mongod` and `node server`
+    npm install
 
+JavaScript use [Bower](http://bower.io) or [Volo](http://volpjs.org)
+
+    bower install
+    or
+    volo install
+
+Start
+---
+
+1. Develop your project in `src/app/` using html,css,js until it is amazing.
+2. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
+3. Run `cordova.sh` builds a Native App in `dist/cordova/dApp` using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
+4. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be
+
+Debug Web
+---
+Source:
+
+    ./node_modules/.bin/http-server .
+    open http://localhost:8080/src/src-index.html
+
+Built:
+
+    ./node_modules/.bin/http-server dist/www
+    open http://localhost:8081/dist/www/index.html
+    
+Debug Cordova/PhoneGap
+---
+Android:
+
+    ./node_modules/.bin/cordova emulate android
+    
+Apple iOS:
+
+    ./node_modules/.bin/cordova emulate ios
+
+   
 
 ### Windows Users
 
@@ -30,7 +65,7 @@ some dependencies by running the following commands:
 Node will reward you with much faster builds.
 
 A brief tour
-------------
+----
 
 * The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`
   It's responsible for loading the Dojo loader and the application’s
@@ -127,5 +162,10 @@ The DApp Boilerplate is licensed under the [same
 terms](https://github.com/dojo/dojo/blob/master/LICENSE) as the Dojo
 Toolkit.
 
-* [BSD](https://github.com/dojo/dojo/blob/master/LICENSE#L13)
+* [BSD](https://github.com/dojo/dojo/blob/master/LICENSE#L13) 
 * [AFLv2.1](https://github.com/dojo/dojo/blob/master/LICENSE#L43)
+
+
+Thanks
+---
+- Huge thanks go out to [csnover](https://github.com/csnover) and the other contributors for the original [dojo-boilerplate](https://github.com/csnover/dojo-boilerplate) project.

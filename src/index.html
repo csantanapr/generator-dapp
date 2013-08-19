@@ -23,8 +23,8 @@
 
 
 
-		 NOTE: `build.sh` is responsible for removing the "isDebug" flag when deploying to production. If you modify
-		 this flag at all, you will break the build! -->
+         NOTE: `build.sh` is responsible for removing the "isDebug" flag when deploying to production. If you modify
+         this flag at all, you will break the build! -->
 
     <!-- Example on showing how to support multiple locals, to test run App with url for testing purposes
          http://localhost:8080/src/index.html?locale=es-es
@@ -35,8 +35,24 @@
         locale: location.search.match(/locale=([\w\-]+)/) ? RegExp.$1 : "en-us"
     };
     </script>
-    <script data-dojo-config="async: 1, isDebug: 1, tlmSiblingOfDojo: 1" src="dojo/dojo.js"></script>
-
+    <!-- Source/Development/not build/
+    <script type="text/javascript"
+            src="../components/dojo/dojo.js"
+            data-dojo-config="async: true, isDebug: true,
+            baseUrl: '../',
+            paths: {
+                'app': 'src/app',
+                'dojo': 'components/dojo',
+                'dojox': 'components/dojox',
+                'dijit': 'components/dijit'
+            }">
+    </script>
+    -->
+    <!-- Compile/Distribution/built -->
+    <script type="text/javascript"
+            src="dojo/dojo.js"
+            data-dojo-config="async: true, isDebug: false">
+    </script>
 
     <script type="text/javascript">
         require([ 'app/main' ]);

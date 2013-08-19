@@ -29,13 +29,21 @@ define([
     'dojox/json/ref',
     'dojo/text!app/config.json',
     'dojo/text!app/resources/data/items.json',
+    'dojo/_base/config',
     //TODO: add all html templates being use in config.json to force them to be included in layer
     // when doing custom dojo build, the build process will recognize them as dependencies for the package
     'dojo/text!app/views/app.html',
     'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
-], function (win, has, require, Application, json, config, data) {
+], function (win, has, require, Application, json, config, data, dojoConfig) {
     'use strict';
+    var appConfig = json.fromJson(config);
+
+    if (dojoConfig.isDebug) {
+        //really a hack, TODO fix this and make for flexible
+        appConfig.loaderConfig.paths.app = "../src/app";
+    }
+
     win.global.myapp = {};
 
     // populate has flag on whether html5 history is correctly supported or not
@@ -48,6 +56,6 @@ define([
     win.global.myapp.dataItems = json.fromJson(data);
 
     //Start the App
-    win.global.myapp.App = new Application(json.fromJson(config));
+    win.global.myapp.App = new Application(appConfig);
 
 });

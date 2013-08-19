@@ -10,13 +10,14 @@
  *
  * Look to `util/build/buildControlDefault.js` for more information on available options and their default values.
  */
+
 require(["dojox/app/build/buildControlApp"], function (bc) {'use strict'; });
 
 var profile = {
     // `basePath` is relative to the directory containing this profile file; in this case, it is being set to the
     // src/ directory, which is the same place as the `baseUrl` directory in the loader configuration. (If you change
     // this, you will also need to update run.js.)
-    basePath: '../src/',
+    basePath: '../',
 
     // nls handling
     //localeList: 'en,en-us,en-gb,es,es-es',
@@ -63,12 +64,16 @@ var profile = {
     packages: [
         // If you are registering a package that has an identical name and location, you can just pass a string
         // instead, and it will configure it using that string for both the "name" and "location" properties. Handy!
-        'dojo',
-        'dijit',
-        'dojox',
+        //'dojo',
+        //'dijit',
+        //'dojox',
+        { name: 'dojo', location: 'components/dojo'},
+        { name: 'dijit', location: 'components/dijit'},
+        { name: 'dojox', location: 'components/dojox'},
+
 
         // For reference, this is what a more verbose package declaration looks like.
-        { name: 'app', location: 'app', map: {} }
+        { name: 'app', location: 'src/app', map: {} }
     ],
 
     // Builds can be split into multiple different JavaScript files called "layers". This allows applications to

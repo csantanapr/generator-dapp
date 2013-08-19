@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-set -e
+set -x
 date1=$(date +"%s")
 
 # Base directory for this entire project
@@ -12,8 +12,11 @@ PATH="${BASEDIR}/node_modules/.bin::${PATH}"
 # Source directory for unbuilt code
 SRCDIR="$BASEDIR/src"
 
+#JS Components (bower or volo)
+JSLIBS="$BASEDIR/components"
+
 # Directory containing dojo build utilities
-TOOLSDIR="$SRCDIR/util/buildscripts"
+TOOLSDIR="$JSLIBS/util/buildscripts"
 
 # Main application package build configuration
 PROFILE="$BASEDIR/profiles/app.profile.js"
@@ -33,9 +36,12 @@ DIST_WWW_DIR="$DIST_DIR/www"
 # Configuration over. Main application start up!
 
 if [ ! -d "$TOOLSDIR" ]; then
-	echo "Can't find Dojo build tools -- did you initialise submodules? (git submodule update --init --recursive)"
-	exit 1
+    echo "Can't find Dojo build tools -- did you initialise submodules? (git submodule update --init --recursive)"
+    exit 1
 fi
+
+echo "Hack to move dojox_application to dojox/app"
+cp -af ${JSLIBS}/dojox_application/ ${JSLIBS}/dojox/app/
 
 echo "Building application with $PROFILE to $TMP_BUILD_DIR."
 
@@ -43,10 +49,10 @@ cd "$TOOLSDIR"
 
 if which node >/dev/null; then
     echo "running node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$TMP_BUILD_DIR" --appConfigFile "$APPCONFIG" $@"
-	node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$TMP_BUILD_DIR" --appConfigFile "$APPCONFIG" $@
+    node ../../dojo/dojo.js load=build --profile "$PROFILE" --releaseDir "$TMP_BUILD_DIR" --appConfigFile "$APPCONFIG" $@
     echo "************************If you see this line the build Did NOT blew up**************************"
 elif which java >/dev/null; then
-	echo "The build produce errors when running with java, I recommend installing node"
+    echo "The build produce errors when running with java, I recommend installing node"
     echo "When using Java to build dojo error 303 for html files being inserted to layer will show up: "
     echo "error(303) Missing include module for layer."
     echo "missing: app/views/app.html; layer: app/main"
@@ -60,8 +66,8 @@ elif which java >/dev/null; then
     #java -Xms256m -Xmx256m  -cp ../shrinksafe/js.jar:../closureCompiler/compiler.jar:../shrinksafe/shrinksafe.jar org.mozilla.javascript.tools.shell.Main  ../../dojo/dojo.js baseUrl=../../dojo load=build --profile "$PROFILE" --releaseDir "$TMP_BUILD_DIR" --appConfigFile "$APPCONFIG" $@
     exit 1
 else
-	echo "Need node.js or Java to build!"
-	exit 1
+    echo "Need node.js or Java to build!"
+    exit 1
 fi
 
 echo "Dojo build done: $TMP_BUILD_DIR"
@@ -73,9 +79,8 @@ mkdir -p "$DIST_WWW_DIR"
 # Copy Build Report
 cp "$TMP_BUILD_DIR/build-report.txt" "$DIST_WWW_DIR/"
 
-# Copy & and disable debug
-cat "$SRCDIR/index.html" | \
-perl -pe "s/isDebug: 1/isDebug: 0/; # Remove isDebug" > "$TMP_BUILD_DIR/index.html"
+# Copy index.html
+cp -a "$SRCDIR/index.html" "$DIST_WWW_DIR/index.html"
 
 #index.html
 cp -a "$TMP_BUILD_DIR/index.html" "$DIST_WWW_DIR"
