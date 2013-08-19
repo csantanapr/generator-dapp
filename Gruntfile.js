@@ -31,12 +31,27 @@ module.exports = function (grunt) {
                 files: '<%= jshint.src.src %>',
                 tasks: ['jshint:src', 'jslint:src']
             }
+        },
+        dojo: {
+            dist: {
+                options: {
+                    profile: 'profiles/app.profile.js', // Profile fobuild
+                    appConfigFile: './src/app/config.json', // Optional: Config filfor dojox/app
+                    releaseDir: 'dist/.build'
+                }
+            },
+            options: {
+                // You can also specify options to be used in all your tasks
+                dojo: 'components/dojo/dojo.js', // Path to dojo.js file in dojo source
+                load: 'build' // Optional: Utiltbootstrap (Default:
+            }
         }
     });
     // These plugins provide necessary tasks.
     grunt.loadNpmTasks('grunt-contrib-jshint');
     grunt.loadNpmTasks('grunt-jslint');
     grunt.loadNpmTasks('grunt-contrib-watch');
+    grunt.loadNpmTasks('grunt-dojo');
 
     // Default task.
     grunt.registerTask('default', ['jshint', 'jslint']);
