@@ -1,11 +1,27 @@
-/*global module */
+/*global module, require */
 
 module.exports = function (grunt) {
     'use strict';
+    // load all grunt tasks
+    require('matchdep').filterDev('grunt-*').forEach(grunt.loadNpmTasks);
+
+    // configurable paths
+    var yeomanConfig = {
+            src: 'src',
+            app: 'src/app',
+            dist: 'dist',
+            www: 'dist'
+        },
+        LIVERELOAD_PORT = 35729,
+        lrSnippet = require('connect-livereload')({port: LIVERELOAD_PORT}),
+        mountFolder = function (connect, dir) {
+            return connect['static'](require('path').resolve(dir));
+        };
 
     // Project configuration.
     grunt.initConfig({
         // Metadata.
+        yeoman: yeomanConfig,
         jshint: {
             gruntfile: {
                 src: 'Gruntfile.js'
@@ -23,8 +39,13 @@ module.exports = function (grunt) {
             }
         },
         watch: {
-            options: {
-                livereload: true
+            livereload: {
+                options: {
+                    livereload: LIVERELOAD_PORT
+                },
+                files: [
+                    '<%= yeoman.src %>/**'
+                ]
             },
             gruntfile: {
                 files: '<%= jshint.gruntfile.src %>',
@@ -51,13 +72,21 @@ module.exports = function (grunt) {
             }
         },
         copy: {
-            app: {
+            app_index: {
                 files: [
                     {
                         expand: true,
+                        flatten: true,
                         cwd: 'src',
-                        src: ['index.html'],
-                        dest: 'dist/www/'
+                        src: ['dist-index.html'],
+                        dest: 'dist/www/',
+                        rename: function (dest) {
+                          // use the source directory to create the file
+                          // example with your directory structure
+                          //   dest = 'dist/www/'
+                          //   src = 'dist-index.html'
+                            return dest + 'index.html';
+                        }
                     }
                 ]
             },
@@ -161,20 +190,83 @@ module.exports = function (grunt) {
                         dest: 'dist/www/'
                     }
                 ]
+            },
+            dojox_app_hack: {
+                //This is really nasty hack, but dojox/app come empty from repo becasue of git submodules
+                // the contents is located in another repo and it MUST be copy over
+                files: [
+                    {
+                        expand: true,
+                        cwd: 'components/dojox_application',
+                        src: ['**'],
+                        dest: 'components/dojox/app'
+                    }
+                ]
+            }
+        },
+        clean: {
+            dist: {
+                files: [{
+                    dot: true,
+                    src: [
+                        '<%= yeoman.dist %>/*',
+                        '!<%= yeoman.dist %>/.git*'
+                    ]
+                }]
+            }
+        },
+        connect: {
+            options: {
+                port: 9000,
+                // change this to '0.0.0.0' or '*' to access the server from outside
+                hostname: 'localhost'
+            },
+            livereload: {
+                options: {
+                    middleware: function (connect) {
+                        return [
+                            lrSnippet,
+                            mountFolder(connect, '.')
+                        ];
+                    }
+                }
+            },
+            dist: {
+                options: {
+                    middleware: function (connect) {
+                        return [
+                            mountFolder(connect, yeomanConfig.www)
+                        ];
+                    }
+                }
+            }
+        },
+        open: {
+            server: {
+                path: 'http://localhost:<%= connect.options.port %>/src/index.html'
+            },
+            dist: {
+                path: 'http://localhost:<%= connect.options.port %>'
             }
         }
     });
-    // These plugins provide necessary tasks.
-    grunt.loadNpmTasks('grunt-contrib-jshint');
-    grunt.loadNpmTasks('grunt-jslint');
-    grunt.loadNpmTasks('grunt-contrib-watch');
-    grunt.loadNpmTasks('grunt-dojo');
-    grunt.loadNpmTasks('grunt-contrib-copy');
+
 
     // Default task.
 
     grunt.registerTask('lint', ['jshint', 'jslint']);
-    grunt.registerTask('build', ['lint', 'dojo', 'copy']);
+    grunt.registerTask('build', ['lint', 'copy:dojox_app_hack', 'dojo', 'copy']);
     grunt.registerTask('default', ['build']);
+    grunt.registerTask('server', function (target) {
+        if (target === 'dist') {
+            return grunt.task.run(['build', 'open:dist', 'connect:dist:keepalive']);
+        }
+
+        grunt.task.run([
+            'connect:livereload',
+            'open:server',
+            'watch'
+        ]);
+    });
 
 };

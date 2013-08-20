@@ -1,7 +1,7 @@
 A Starter Kit for SPA (Single Page Apps)
 ===
 
-- The Boilerplate is a set of files to help you rapidly get up and running a SPA 
+- The Boilerplate is a set of files to help you rapidly get up and running a SPA
 - Helps you build your SPA which some times consumes a lot of time when starting a new SPA
 - The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
 
@@ -22,37 +22,50 @@ JavaScript use [Bower](http://bower.io) or [Volo](http://volojs.org)
     or
     volo install
 
-Start
+Grunt
+--
+Use grunt to run tasks, for available tasks run `grunt --help`
+
+Preview Source
 ---
+  grunt server
 
-1. Develop your project in `src/app/` using html,css,js until it is amazing.
-2. Run `build.sh`, which will create an awesome web optimized builds `dist/www`.
-3. Run `cordova.sh` builds a Native App in `dist/cordova/dApp` using your web code using [Apache Cordova/PhoneGap](http://cordova.io)
-4. Happiness, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be
-
-Debug Web
+Preview Distribution
 ---
-Source:
+  grunt dist
 
-    ./node_modules/.bin/http-server .
-    open http://localhost:8080/src/src-index.html
+Lint
+---
+  grunt lint
 
-Built:
+Build
+---
+Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. Believe me I cried a lot :-(
 
-    ./node_modules/.bin/http-server dist/www
-    open http://localhost:8081/dist/www/index.html
-    
+  grunt build
+
+Develop
+---
+Develop your project in `src/app/` using html,css,js,images
+
+Hybrid App (Optional)
+---
+Run `cordova.sh` builds a Native App in `dist/cordova/dApp` using [Apache Cordova/PhoneGap CLI](http://cordova.io)
+
+TODO: move codova.sh to grunt task
+
+
 Debug Cordova/PhoneGap
 ---
 Android:
 
     ./node_modules/.bin/cordova emulate android
-    
+
 Apple iOS:
 
     ./node_modules/.bin/cordova emulate ios
 
-   
+
 
 ### Windows Users
 
@@ -69,7 +82,7 @@ A brief tour
 * The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`
   It's responsible for loading the Dojo loader and the application’s
   bootstrapper with `config.json`
-* The file `build.sh` takes your application files and builds them for
+* The file `grunt build` takes your application files and builds them for
   production use using the Dojo build tool. It depends on the presence of the
   build profile at `profiles/app.profile.js` and App config `src/app/config.json` .
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
@@ -103,6 +116,9 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+#### Version 0.1.5
+- Implemented Initial support for [Grunt](http://gruntjs.com)
+
 #### Version 0.1.4
 - Implemented JS lib dependencies using components with bower or volo
 
@@ -133,8 +149,7 @@ Change Log
 
 Future
 ---
-- Automate build and test tasks
-  - Add support for Grunt Tasks
+- Automate cordova using grunt
 - Integrate Automation Testing
   - Add unit tests (i.e. Jasmine or Mocha)
   - Add functional testing (Webdriver API)
@@ -160,7 +175,7 @@ The DApp Boilerplate is licensed under the [same
 terms](https://github.com/dojo/dojo/blob/master/LICENSE) as the Dojo
 Toolkit.
 
-* [BSD](https://github.com/dojo/dojo/blob/master/LICENSE#L13) 
+* [BSD](https://github.com/dojo/dojo/blob/master/LICENSE#L13)
 * [AFLv2.1](https://github.com/dojo/dojo/blob/master/LICENSE#L43)
 
 
