@@ -5,44 +5,45 @@ A Starter Kit for SPA (Single Page Apps)
 - Helps you build your SPA which some times consumes a lot of time when starting a new SPA
 - The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
 
-Clone
+Installing
 ---
+### Clone Project
+
     git clone https://github.com/csantanapr/dapp-boilerplate.git
     cd dapp-boilerplate
 
-Dependencies
----
+### Install Node Dependencies
+
 Node and cli dependencies use [NPM](http://npmjs.org):
 
     npm install
 
-JavaScript use [Bower](http://bower.io) or [Volo](http://volojs.org)
+### Install Browser Dependencies
+Use [Bower](http://bower.io) or [Volo](http://volojs.org)
 
     bower install
     or
     volo install
 
-Grunt
---
+Development Workflow (Use Grunt to preview, lint, build)
+---
 Use grunt to run tasks, for available tasks run `grunt --help`
 
-Preview Source
----
+### Preview Source
     grunt server
 
-Preview Distribution
----
+### Preview Distribution
     grunt server:dist
 
-Lint
----
+### Lint
     grunt lint
-Build
----
+
+### Build
 Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. Believe me I cried a lot :-(
 
     grunt build
-Develop
+
+Modify App
 ---
 Develop your project in `src/app/` using html,css,js,images
 
@@ -53,8 +54,8 @@ Run `cordova.sh` to build a Native App in `dist/cordova/dApp` using [Apache Cord
 TODO: move codova.sh to grunt task
 
 
-Debug Cordova/PhoneGap
----
+### Debug Cordova/PhoneGap
+
 Android:
 
     ./node_modules/.bin/cordova emulate android
@@ -114,6 +115,11 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+
+#### Version 0.1.7
+- Fix mising npm dependency matchdep
+- Fix added copy_dojox_hack as part of grunt server task
+
 #### Version 0.1.6
 - Fix build dist nls files not copied
 - Fix grunt server:dist task

@@ -263,6 +263,8 @@ module.exports = function (grunt) {
         }
 
         grunt.task.run([
+            'copy:dojox_app_hack',
+            'lint',
             'connect:livereload',
             'open:server',
             'watch'
