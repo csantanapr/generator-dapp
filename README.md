@@ -32,7 +32,7 @@ Preview Source
 
 Preview Distribution
 ---
-    grunt dist
+    grunt server:dist
 
 Lint
 ---
@@ -114,6 +114,10 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+#### Version 0.1.6
+- Fix build dist nls files not copied
+- Fix grunt server:dist task
+
 #### Version 0.1.5
 - Implemented Initial support for [Grunt](http://gruntjs.com)
 

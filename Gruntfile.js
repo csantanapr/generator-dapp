@@ -10,7 +10,7 @@ module.exports = function (grunt) {
             src: 'src',
             app: 'src/app',
             dist: 'dist',
-            www: 'dist'
+            www: 'dist/www'
         },
         LIVERELOAD_PORT = 35729,
         lrSnippet = require('connect-livereload')({port: LIVERELOAD_PORT}),
@@ -125,7 +125,7 @@ module.exports = function (grunt) {
                     {
                         expand: true,
                         cwd: 'dist/.build',
-                        src: ['app/main*.js'],
+                        src: ['app/nls/main*.js'],
                         dest: 'dist/www/'
                     }
                 ]
