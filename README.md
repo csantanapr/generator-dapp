@@ -28,29 +28,27 @@ Use grunt to run tasks, for available tasks run `grunt --help`
 
 Preview Source
 ---
-  grunt server
+    grunt server
 
 Preview Distribution
 ---
-  grunt dist
+    grunt dist
 
 Lint
 ---
-  grunt lint
-
+    grunt lint
 Build
 ---
 Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. Believe me I cried a lot :-(
 
-  grunt build
-
+    grunt build
 Develop
 ---
 Develop your project in `src/app/` using html,css,js,images
 
 Hybrid App (Optional)
 ---
-Run `cordova.sh` builds a Native App in `dist/cordova/dApp` using [Apache Cordova/PhoneGap CLI](http://cordova.io)
+Run `cordova.sh` to build a Native App in `dist/cordova/dApp` using [Apache Cordova/PhoneGap CLI](http://cordova.io)
 
 TODO: move codova.sh to grunt task
 
