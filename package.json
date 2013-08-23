@@ -38,8 +38,8 @@
   ],
   "readmeFilename": "README.md",
   "devDependencies": {
-    "cordova": "~3.x.x",
-    "uglify-js": "~1.x",
+    "cordova": "~3.0.6",
+    "uglify-js": "1.x",
     "http-server": "~0.5.5",
     "grunt": "~0.4.1",
     "grunt-contrib-jshint": "~0.6.3",
