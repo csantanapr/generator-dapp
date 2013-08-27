@@ -3,20 +3,22 @@ A Starter Kit for SPA (Single Page Apps)
 
 - The Boilerplate is a set of files to help you rapidly get up and running a SPA
 - Helps you build your SPA which some times consumes a lot of time when starting a new SPA
-- The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](cordova.io)
+- The SPA provides optional creation of Hybrid App using [Apache Cordova/PhoneGap](http://cordova.io)
 
 Installing
----
+===
 ### Clone Project
 
     git clone https://github.com/csantanapr/dapp-boilerplate.git
     cd dapp-boilerplate
 
-### Install Node Dependencies
+### Install CLI Dependencies
 
-Node and cli dependencies use [NPM](http://npmjs.org):
+Use  [NPM](http://npmjs.org):
 
     npm install
+    
+Downloads cli dependencies to `node_modules/`
 
 ### Install Browser Dependencies
 Use [Bower](http://bower.io) or [Volo](http://volojs.org)
@@ -25,11 +27,15 @@ Use [Bower](http://bower.io) or [Volo](http://volojs.org)
     or
     volo install
 
-Development Workflow (Use Grunt to preview, lint, build)
----
-Use grunt to run tasks, for available tasks run `grunt --help`
+Downloads browser dependencies to `components/`
 
-### Preview Source
+----
+
+Development Workflow (Use Grunt to preview, lint, build)
+===
+Use grunt to run tasks, for more available tasks run `grunt --help`
+
+### Preview Source with watch and liverelaod
     grunt server
 
 ### Preview Distribution
@@ -39,33 +45,32 @@ Use grunt to run tasks, for available tasks run `grunt --help`
     grunt lint
 
 ### Build
-Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. Believe me I cried a lot :-(
+Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. 
+
+Believe me I cried a lot :-(
 
     grunt build
 
-Modify App
----
-Develop your project in `src/app/` using html,css,js,images
+### Hybrid App (Apache Cordova/PhoneGap)
 
-Hybrid App (Optional)
----
-Run `cordova.sh` to build a Native App in `dist/cordova/dApp` using [Apache Cordova/PhoneGap CLI](http://cordova.io)
+To build web and cordova run:
 
-TODO: move codova.sh to grunt task
+    grunt build
+    
+To run Simulators (Apple iOS, Android) run:
 
+    grunt cordova_emulate
 
-### Debug Cordova/PhoneGap
+To run just Apple iOS Simulator run:
 
-Android:
+    grunt cordovacli:emualte_ios
+    
+To run just Android Simulator run:
 
-    ./node_modules/.bin/cordova emulate android
+    grunt cordovacli:emualte_android
 
-Apple iOS:
-
-    ./node_modules/.bin/cordova emulate ios
-
-
-
+----
+    
 ### Windows Users
 
 If you have [msysgit](http://git-scm.com) installed, run Git Bash and verify
@@ -82,14 +87,14 @@ A brief tour
   It's responsible for loading the Dojo loader and the application’s
   bootstrapper with `config.json`
 * The file `grunt build` takes your application files and builds them for
-  production use using the Dojo build tool. It depends on the presence of the
-  build profile at `profiles/app.profile.js` and App config `src/app/config.json` .
+  production using the Dojo build tool. 
+  * It depends on the presence of the build profile at `profiles/app.profile.js` and App config `src/app/config.json`
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
-* The file `src/app/config.json` its the brain to compose the App and also use to figure out dependencies for Dojo Build
+* The file `src/app/config.json` its the brain that composes the App and also used to discover dependencies for Dojo Build
 * The file `src/app/views/css/app.css` contains import statements to load the CSS it's inserted from `src/index.html`
-* The file `src/app/views/app.js/` is an additional App Controller
+* The file `src/app/views/app.js` is an additional App Controller
 * The file `src/app/views/app.html` contains the App level html template and its specified in `src/app/config.json`
-* The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module compose of css/images/html/js
+* The directories inside `src/app/views/[view1 | view2 | view3]` contain View level module composed of css/images/html/js
 * JS = ViewControllers, HTML=ViewTemplates
 * Add View Templates, View Controllers, and Object Stores (i.e. Models) starting by modifying the `src/app/config.json`
 * The provided directory structure for css, html, and js for your App is defined in config.json, you can change to a different convention
@@ -115,6 +120,9 @@ accepted, for the good of us all!)
 
 Change Log
 ---
+
+#### Version 0.1.8
+- Replace cordova.sh with [grunt-cordovacli](https://npmjs.org/package/grunt-cordovacli) plugin
 
 #### Version 0.1.7
 - Fix mising npm dependency matchdep
@@ -157,7 +165,7 @@ Change Log
 
 Future
 ---
-- Automate cordova using grunt
+
 - Integrate Automation Testing
   - Add unit tests (i.e. Jasmine or Mocha)
   - Add functional testing (Webdriver API)

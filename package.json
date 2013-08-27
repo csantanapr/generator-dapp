@@ -1,6 +1,6 @@
 {
   "name": "dapp-boilerplate",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Boilerplate for Single Page App using Dojo App Framework",
   "private": true,
   "main": "index.js",

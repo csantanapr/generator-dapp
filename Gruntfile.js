@@ -239,10 +239,16 @@ module.exports = function (grunt) {
                     platforms: ['ios', 'android']
                 }
             },
-            emulate: {
+            emulate_ios: {
                 options: {
                     command: 'emulate',
-                    platforms: ['ios', 'android']
+                    platforms: ['ios']
+                }
+            },
+            emulate_android: {
+                options: {
+                    command: 'emulate',
+                    platforms: ['android']
                 }
             }
         },
@@ -306,14 +312,15 @@ module.exports = function (grunt) {
     // Default task.
 
     grunt.registerTask('lint', ['jshint', 'jslint']);
-    grunt.registerTask('build_web', ['lint', 'copy:dojox_app_hack', 'dojo']);
+    grunt.registerTask('build_web', ['lint', 'copy:dojox_app_hack', 'dojo', 'copy']);
     grunt.registerTask('cordova', ['clean:cordova', 'cordovacli:create', 'cordovacli:platform']);
-    grunt.registerTask('build_cordova', ['cordova', 'cordovacli:build']);
-    grunt.registerTask('build', ['build_web', 'build_cordova', 'copy']);
+    grunt.registerTask('cordova_build', ['copy:cordova', 'cordovacli:build']);
+    grunt.registerTask('cordova_emulate', ['build_cordova', 'cordovacli:emulate_ios', , 'cordovacli:emulate_android']);
+    grunt.registerTask('build', ['build_web', 'cordova', 'cordova_build', 'copy']);
     grunt.registerTask('default', ['build']);
     grunt.registerTask('server', function (target) {
         if (target === 'dist') {
-            return grunt.task.run(['build', 'open:dist', 'connect:dist:keepalive']);
+            return grunt.task.run(['build_web', 'open:dist', 'connect:dist:keepalive']);
         }
 
         grunt.task.run([
