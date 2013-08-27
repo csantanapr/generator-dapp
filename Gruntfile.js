@@ -10,7 +10,8 @@ module.exports = function (grunt) {
             src: 'src',
             app: 'src/app',
             dist: 'dist',
-            www: 'dist/www'
+            www: 'dist/www',
+            cordova_path: 'dist/cordova/dApp'
         },
         LIVERELOAD_PORT = 35729,
         lrSnippet = require('connect-livereload')({port: LIVERELOAD_PORT}),
@@ -202,6 +203,47 @@ module.exports = function (grunt) {
                         dest: 'components/dojox/app'
                     }
                 ]
+            },
+            cordova: {
+                files: [
+                    {
+                        expand: true,
+                        cwd: '<%= yeoman.www %>',
+                        src: '**',
+                        dest: '<%= yeoman.cordova_path %>/www/'
+                    }
+                ]
+            }
+        },
+        cordovacli: {
+            options: {
+                path: '<%= yeoman.cordova_path %>'
+            },
+            create: {
+                options: {
+                    command: 'create',
+                    id: 'com.myHybridApp', //optional
+                    name: 'myHybridApp'    //optional
+                }
+            },
+            platform: {
+                options: {
+                    command: 'platform',
+                    action: 'add',                  //valid actions for command platform are add , remove, rm
+                    platforms: ['ios', 'android']          //valid platforms for command platform are ios, android, blackberry10, wp8, wp7
+                }
+            },
+            build: {
+                options: {
+                    command: 'build',
+                    platforms: ['ios', 'android']
+                }
+            },
+            emulate: {
+                options: {
+                    command: 'emulate',
+                    platforms: ['ios', 'android']
+                }
             }
         },
         clean: {
@@ -211,6 +253,15 @@ module.exports = function (grunt) {
                     src: [
                         '<%= yeoman.dist %>/*',
                         '!<%= yeoman.dist %>/.git*'
+                    ]
+                }]
+            },
+            cordova: {
+                files: [{
+                    dot: true,
+                    src: [
+                        '<%= yeoman.cordova_path %>/*',
+                        '!<%= yeoman.cordova_path %>/.git*'
                     ]
                 }]
             }
@@ -255,7 +306,10 @@ module.exports = function (grunt) {
     // Default task.
 
     grunt.registerTask('lint', ['jshint', 'jslint']);
-    grunt.registerTask('build', ['lint', 'copy:dojox_app_hack', 'dojo', 'copy']);
+    grunt.registerTask('build_web', ['lint', 'copy:dojox_app_hack', 'dojo']);
+    grunt.registerTask('cordova', ['clean:cordova', 'cordovacli:create', 'cordovacli:platform']);
+    grunt.registerTask('build_cordova', ['cordova', 'cordovacli:build']);
+    grunt.registerTask('build', ['build_web', 'build_cordova', 'copy']);
     grunt.registerTask('default', ['build']);
     grunt.registerTask('server', function (target) {
         if (target === 'dist') {
