@@ -120,7 +120,7 @@
                         "idProperty":"field"
                     }
                 }
-            },
+            }
         },
         "view2":{
             //Mandatory for defaultViews

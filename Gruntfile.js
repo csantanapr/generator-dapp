@@ -29,7 +29,7 @@ module.exports = function (grunt) {
                 src: 'Gruntfile.js'
             },
             src: {
-                src: ['<%= yeoman.src %>/**/*.js']
+                src: ['<%= yeoman.src %>/**/*.js', '<%= yeoman.src %>/**/*.json']
             }
         },
         jslint: {
