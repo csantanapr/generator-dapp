@@ -40,6 +40,14 @@ module.exports = function (grunt) {
                 src: '<%= jshint.src.src %>'
             }
         },
+        csslint: {
+            lax: {
+                options: {
+                    'import': false
+                },
+                src: ['<%= yeoman.src %>/**/*.css']
+            }
+        },
         watch: {
             livereload: {
                 options: {
@@ -54,8 +62,8 @@ module.exports = function (grunt) {
                 tasks: ['jshint:gruntfile', 'jslint:gruntfile']
             },
             src: {
-                files: '<%= jshint.src.src %>',
-                tasks: ['jshint:src', 'jslint:src']
+                files: '<%= yeoman.src %>/**',
+                tasks: ['lint']
 
             }
         },
@@ -233,7 +241,7 @@ module.exports = function (grunt) {
     // Default task.
 
     //Linting tasks
-    grunt.registerTask('lint', ['jshint', 'jslint']);
+    grunt.registerTask('lint', ['jshint', 'jslint', 'csslint']);
     //web dev tasks
     grunt.registerTask('web_build', ['lint', 'copy:web_dojox_app_hack', 'dojo', 'copy:web_index', 'copy:web']);
     //main build tasks
