@@ -53,7 +53,9 @@
     "connect-livereload": "~0.2.0",
     "matchdep": "~0.1.2",
     "grunt-cordovacli": "~0.1.5",
-    "grunt-contrib-csslint": "~0.1.2"
+    "grunt-contrib-csslint": "~0.1.2",
+    "grunt-html-validation": "~0.1.4",
+    "grunt-htmlhint": "~0.4.0"
   },
   "dependencies": {
     "express": "3.x",

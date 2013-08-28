@@ -48,6 +48,29 @@ module.exports = function (grunt) {
                 src: ['<%= yeoman.src %>/**/*.css']
             }
         },
+        validation: { // Grunt w3c validation plugin
+            options: {
+                reset: true,
+                stoponerror: true
+            },
+            files: {
+                src: ['<%= yeoman.src %>/*.html']
+            }
+        },
+        htmlhint: {
+            options: {
+                'id-unique': true,
+                'tag-pair': true,
+                'spec-char-escape': true,
+                'attr-value-not-empty': true,
+                'attr-value-double-quotes': true,
+                'attr-lowercase': true,
+                'style-disabled': true
+            },
+            html: {
+                src: ['<%= yeoman.src %>/**/*.html']
+            }
+        },
         watch: {
             livereload: {
                 options: {
@@ -241,7 +264,7 @@ module.exports = function (grunt) {
     // Default task.
 
     //Linting tasks
-    grunt.registerTask('lint', ['jshint', 'jslint', 'csslint']);
+    grunt.registerTask('lint', ['jshint', 'jslint', 'csslint', 'validation', 'htmlhint']);
     //web dev tasks
     grunt.registerTask('web_build', ['lint', 'copy:web_dojox_app_hack', 'dojo', 'copy:web_index', 'copy:web']);
     //main build tasks
