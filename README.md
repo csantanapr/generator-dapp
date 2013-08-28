@@ -17,7 +17,7 @@ Installing
 Use  [NPM](http://npmjs.org):
 
     npm install
-    
+
 Downloads cli dependencies to `node_modules/`
 
 ### Install Browser Dependencies
@@ -45,18 +45,18 @@ Use grunt to run tasks, for more available tasks run `grunt --help`
     grunt lint
 
 ### Build
-Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be. 
+Be happy, and stop crying because you can't figure out how to build dojo or create a hybrid App as fast and simple as it should be.
 
 Believe me I cried a lot :-(
 
     grunt build
 
-### Hybrid App (Apache Cordova/PhoneGap)
+### Optional: Hybrid App (Apache Cordova/PhoneGap)
 
 To build web and cordova run:
 
-    grunt build
-    
+    grunt build_all
+
 To run Simulators (Apple iOS, Android) run:
 
     grunt cordova_emulate
@@ -64,13 +64,13 @@ To run Simulators (Apple iOS, Android) run:
 To run just Apple iOS Simulator run:
 
     grunt cordovacli:emualte_ios
-    
+
 To run just Android Simulator run:
 
     grunt cordovacli:emualte_android
 
 ----
-    
+
 ### Windows Users
 
 If you have [msysgit](http://git-scm.com) installed, run Git Bash and verify
@@ -87,7 +87,7 @@ A brief tour
   It's responsible for loading the Dojo loader and the application’s
   bootstrapper with `config.json`
 * The file `grunt build` takes your application files and builds them for
-  production using the Dojo build tool. 
+  production using the Dojo build tool.
   * It depends on the presence of the build profile at `profiles/app.profile.js` and App config `src/app/config.json`
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
 * The file `src/app/config.json` its the brain that composes the App and also used to discover dependencies for Dojo Build

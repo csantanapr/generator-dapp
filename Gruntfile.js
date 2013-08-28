@@ -11,6 +11,7 @@ module.exports = function (grunt) {
             app: 'src/app',
             dist: 'dist',
             www: 'dist/www',
+            tmp: 'dist/.build',
             cordova_path: 'dist/cordova/dApp'
         },
         LIVERELOAD_PORT = 35729,
@@ -28,7 +29,7 @@ module.exports = function (grunt) {
                 src: 'Gruntfile.js'
             },
             src: {
-                src: ['src/**/*.js']
+                src: ['<%= yeoman.src %>/**/*.js']
             }
         },
         jslint: {
@@ -62,8 +63,8 @@ module.exports = function (grunt) {
             dist: {
                 options: {
                     profile: 'profiles/app.profile.js', // Profile fobuild
-                    appConfigFile: './src/app/config.json', // Optional: Config filfor dojox/app
-                    releaseDir: 'dist/.build'
+                    appConfigFile: './src/app/config.json', // Optional: Config file for dojox/app
+                    releaseDir: '<%= yeoman.tmp %>'
                 }
             },
             options: {
@@ -73,14 +74,35 @@ module.exports = function (grunt) {
             }
         },
         copy: {
-            app_index: {
+            web: {
+                expand: true,
+                cwd: '<%= yeoman.tmp %>',
+                src: [
+                    'app/views/css/app.css',
+                    'app/views/images/**',
+                    'app/main.js',
+                    'app/nls/main*.js',
+                    'app/resources/data/**',
+                    'app/views/view1/images/**',
+                    'dojox/mobile/themes/android/android.css',
+                    'dojox/mobile/themes/iphone/iphone.css',
+                    'dojox/mobile/themes/iphone/ipad.css',
+                    'dojox/mobile/themes/blackberry/blackberry.css',
+                    'dojox/mobile/themes/holodark/holodark.css',
+                    'dojox/mobile/themes/windows/windows.css',
+                    'dojox/mobile/themes/custom/custom.css',
+                    'dojo/dojo.js', 'build-report.txt'
+                ],
+                dest: '<%= yeoman.www %>'
+            },
+            web_index: {
                 files: [
                     {
                         expand: true,
                         flatten: true,
                         cwd: 'src',
                         src: ['dist-index.html'],
-                        dest: 'dist/www/',
+                        dest: '<%= yeoman.www %>',
                         rename: function (dest) {
                           // use the source directory to create the file
                           // example with your directory structure
@@ -91,108 +113,7 @@ module.exports = function (grunt) {
                     }
                 ]
             },
-            app_css: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/views/css/app.css'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            app_images: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/views/images/**'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            app_js: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/main.js'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            app_nls: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/nls/main*.js'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            app_data: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/resources/data/**'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            app_view1: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['app/views/view1/images/**'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            dojo_themes: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: [
-                            'dojox/mobile/themes/android/android.css',
-                            'dojox/mobile/themes/iphone/iphone.css',
-                            'dojox/mobile/themes/iphone/ipad.css',
-                            'dojox/mobile/themes/blackberry/blackberry.css',
-                            'dojox/mobile/themes/holodark/holodark.css',
-                            'dojox/mobile/themes/windows/windows.css',
-                            'dojox/mobile/themes/custom/custom.css'
-                        ],
-                        dest: 'dist/www/'
-                    },
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: [
-                            'dojox/mobile/themes/android/images/**',
-                            'dojox/mobile/themes/iphone/images/**',
-                            'dojox/mobile/themes/blackberry/images/**',
-                            'dojox/mobile/themes/holodark/images/**',
-                            'dojox/mobile/themes/windows/images/**',
-                            'dojox/mobile/themes/custom/images/**'
-                        ],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            dojo: {
-                files: [
-                    {
-                        expand: true,
-                        cwd: 'dist/.build',
-                        src: ['dojo/dojo.js', 'build-report.txt'],
-                        dest: 'dist/www/'
-                    }
-                ]
-            },
-            dojox_app_hack: {
+            web_dojox_app_hack: {
                 //This is really nasty hack, but dojox/app come empty from repo becasue of git submodules
                 // the contents is located in another repo and it MUST be copy over
                 files: [
@@ -311,25 +232,32 @@ module.exports = function (grunt) {
 
     // Default task.
 
+    //Linting tasks
     grunt.registerTask('lint', ['jshint', 'jslint']);
-    grunt.registerTask('build_web', ['lint', 'copy:dojox_app_hack', 'dojo', 'copy']);
-    grunt.registerTask('cordova', ['clean:cordova', 'cordovacli:create', 'cordovacli:platform']);
-    grunt.registerTask('cordova_build', ['copy:cordova', 'cordovacli:build']);
-    grunt.registerTask('cordova_emulate', ['build_cordova', 'cordovacli:emulate_ios', , 'cordovacli:emulate_android']);
-    grunt.registerTask('build', ['build_web', 'cordova', 'cordova_build', 'copy']);
+    //web dev tasks
+    grunt.registerTask('web_build', ['lint', 'copy:web_dojox_app_hack', 'dojo', 'copy:web_index', 'copy:web']);
+    //main build tasks
+    grunt.registerTask('build', ['web_build']);
+    grunt.registerTask('build_all', ['web_build', 'cordova']);
     grunt.registerTask('default', ['build']);
+    //livereload server tasks server or server:dist
     grunt.registerTask('server', function (target) {
         if (target === 'dist') {
-            return grunt.task.run(['build_web', 'open:dist', 'connect:dist:keepalive']);
+            return grunt.task.run(['web_build', 'open:dist', 'connect:dist:keepalive']);
         }
 
         grunt.task.run([
-            'copy:dojox_app_hack',
+            'copy:web_dojox_app_hack',
             'lint',
             'connect:livereload',
             'open:server',
             'watch'
         ]);
     });
+    //Apache Cordova tasks
+    grunt.registerTask('cordova_create', ['clean:cordova', 'cordovacli:create', 'cordovacli:platform']);
+    grunt.registerTask('cordova_build', ['copy:cordova', 'cordovacli:build']);
+    grunt.registerTask('cordova', ['cordova_create', 'cordova_build']);
+    grunt.registerTask('cordova_emulate', ['cordova_build', 'cordovacli:emulate_ios', 'cordovacli:emulate_android']);
 
 };
