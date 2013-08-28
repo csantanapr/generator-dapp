@@ -77,15 +77,15 @@ module.exports = function (grunt) {
                     livereload: LIVERELOAD_PORT
                 },
                 files: [
-                    '<%= yeoman.src %>/**'
+                    '<%= yeoman.app %>/**'
                 ]
             },
             gruntfile: {
                 files: '<%= jshint.gruntfile.src %>',
-                tasks: ['jshint:gruntfile', 'jslint:gruntfile']
+                tasks: ['jshint:gruntfile']
             },
             src: {
-                files: '<%= yeoman.src %>/**',
+                files: '<%= yeoman.app %>/**',
                 tasks: ['lint']
 
             }

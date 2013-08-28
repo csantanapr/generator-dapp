@@ -1,21 +1,13 @@
 {
     //Mandatory
     "id": "App",
-    //Optional
-    "name": "Boilerplate-App",
-    //Optional
-    "description": "Sample Boilerplate-App to help devs get starteds",
-    //Optional, but very useful for views properties
+    "name": "dapp-boilerplate",
+    "description": "Sample Boilerplate-App to help devs get started",
     "loaderConfig": {
         "paths": {
             "app": "../app"
         }
     },
-    /*
-    //Optional, default is "dojox/css3/transit"
-    "transit": "dojox/css3/transit",
-    */
-    //Optional, but required when not using the parser, and its required by views
     "dependencies": [
         "dojo/store/Observable",
         "dojox/app/controllers/History",
@@ -28,8 +20,6 @@
         //Need to inlclude dependency for model stores across views
         "dojo/store/Memory",
         "dojo/store/JsonRest"
-
-
     ],
     //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
     "modules": [
@@ -77,14 +67,10 @@
             }
         }
     },
-
-    //Optional
-    "template": "app/views/app.html",
-
     //Optional, other examples are "flip, none"
     "defaultTransition": "slide",
     //Mandatory, one or a set of views view1+view2+view3
-    "defaultView": "view1",
+    "defaultView": "home",
 
     //Optional, App level stings
     "nls": "app/nls/app_strings",
@@ -130,6 +116,11 @@
                 "dojox/mobile/Button",
                 "dojox/mobile/RoundRectStoreList"
             ]
+        },
+        "home":{
+            //Mandatory for defaultViews
+            "template": "app/views/home/home.html",
+            "controller" : "app/views/home/home.js"
         }
     },
     "has": {
