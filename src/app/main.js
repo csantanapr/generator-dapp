@@ -10,8 +10,6 @@ define([
     'dojox/json/ref',
     'dojo/text!app/config.json',
     'dojo/_base/config',
-    'dojo/text!app/views/app.html',
-    'dojo/text!app/views/view2/view2.html',
     'dojo/domReady!'
 ], function (has, dApp, json, config, dojoConfig) {
     'use strict';

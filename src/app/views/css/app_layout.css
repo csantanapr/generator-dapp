@@ -1,4 +1,4 @@
 /* This css file should only contain layout or structure rules not asthectic, they belong in *_theme.css */
-.navPane {
-    min-height: 40px;
+.view {
+    min-width: 10em;
 }

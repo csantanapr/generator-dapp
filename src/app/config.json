@@ -9,22 +9,12 @@
         }
     },
     "dependencies": [
-        "dojo/store/Observable",
-        "dojox/app/controllers/History",
+        "app/views/controllers/CustomHistory",
         "dojox/app/controllers/HistoryHash",
-        /* On Mobile always add the 2 following modules dojox/mobule a dojox/mobile/deviceTheme */
-        "dojox/mobile/common",
-        "dojox/mobile/deviceTheme",
-        /* For build to include css3/lite query selectorEngine */
-        "dojo/selector/lite",
-        //Need to inlclude dependency for model stores across views
-        "dojo/store/Memory",
-        "dojo/store/JsonRest"
+        /* On Mobile always add the following module */
+        "dojox/mobile/common"
     ],
-    //Optional, they get mixed into the Application, mixes after dojox/app/module/lifecycle
-    "modules": [
-    ],
-    //Mandatory, they listen to App.emit events, they implement dojox/app/Controller
+    //Mandatory,listen App.emit events,implement dojox/app/Controller
     "controllers": [
         //listens to "app-init, app-load"
         "dojox/app/controllers/Load",
@@ -33,100 +23,27 @@
         //listens to "app-initLayout,app-layoutVIew,app-resize"
         "dojox/app/controllers/Layout"
     ],
-    //Optional, App levels stores shared with views
-    "stores": {
-        "store1":{
-            "type": "dojo/store/Memory",
-            "observable": true,
-            "params": { // parameters used to initialize the data store
-                "data": "myapp.dataItems"
-            }
-        },
-        "store2":{
-            "type": "dojo/store/Memory",
-            "observable": true,
-            "params": { // parameters used to initialize the data store
-                "data": [{"label":"North Carolina", "rightText":"Raleigh"},
-                         {"label":"Virginia",       "rightText":"Richmond"}
-                        ],
-                "idProperty":"label"
-            }
-        },
-        "jsonStore":{
-            "type": "dojo/store/JsonRest",
-            "observable": true,
-            "params": {
-                "target": "app/resources/data/rest/items.json"
-            }
-        },
-        "mongodbStore":{
-            "type": "dojo/store/JsonRest",
-            "observable": true,
-            "params": {
-                "target": "http://localhost:3000/items"
-            }
-        }
-    },
-    //Optional, other examples are "flip, none"
-    "defaultTransition": "slide",
+    "nls": "app/views/nls/app_strings",
     //Mandatory, one or a set of views view1+view2+view3
     "defaultView": "home",
-
-    //Optional, App level stings
-    "nls": "app/nls/app_strings",
     //Mandatory, Specify Application child views
     "views": {
-        "view1":{
-            //Mandatory for defaultViews
-            "template": "app/views/view1/view1.html",
-
-            //Optional, listens to View.emit events
-            //  init
-            //  beforeActivate
-            //  afterActivate
-            //  beforeDeactivate
-            //  afterDeactivate
-            //  destroy
-            "controller": "app/views/view1/view1Ctrl.js",
-            //Optional, overwrites the transition type only for this view
-            "transition": "slide",
-            //Optional, view level strings they get mixed into global nls object
-            "nls": "app/views/view1/nls/view1_strings",
-            //Optional, dependencies for this specific view, declare in template
-            //"dependencies":[
-            //],
-            "stores": {
-                "store3":{
-                    "type": "dojo/store/Memory",
-                    "observable": true,
-                    "params": { // parameters used to initialize the data store
-                        "data": [{"field":"name",     "value":"Carlos Santana", "art":"mblDomButtonCheck"},
-                                 {"field":"twitter",  "value":"@csantanapr", "art":"mblDomButtonRedBall"}
-                                ],
-                        "idProperty":"field"
-                    }
-                }
-            }
-        },
-        "view2":{
-            //Mandatory for defaultViews
-            "template": "app/views/view2/view2.html",
-             "transition": "slide",
-             "dependencies":[
-                "dojox/mobile/Button",
-                "dojox/mobile/RoundRectStoreList"
-            ]
-        },
         "home":{
-            //Mandatory for defaultViews
+            //Mandatory set template for defaultViews
             "template": "app/views/home/home.html",
-            "controller" : "app/views/home/home.js"
+            "controller" : "app/views/home/home.js",
+            "nls": "app/views/home/nls/home_strings"
+        },
+        "about":{
+            //Mandatory set template for defaultViews
+            "template": "app/views/about/about.html",
+            "controller" : "app/views/about/about.js"
         }
     },
     "has": {
         "html5history": {
             "controllers": [
-                "dojox/app/controllers/History"
+                "app/views/controllers/CustomHistory"
             ]
         },
         "!html5history": {

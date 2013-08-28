@@ -1,6 +1,6 @@
 {
 	"name": "app",
-	"version": "0.1.2",
+	"version": "0.1.0",
 	"main": "main",
 	"dependencies": {
 		"dojo": "1.9.1",

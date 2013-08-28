@@ -1,6 +1,6 @@
 /*global define, console*/
 define([
-    'dojo/text!app/views/home/home.html',
+    'dojo/text!app/views/about/about.html',
     'dojox/mobile/Heading',
     'dojox/mobile/EdgeToEdgeList',
     'dojox/mobile/ListItem'
