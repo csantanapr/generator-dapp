@@ -37,7 +37,7 @@ module.exports = function (grunt) {
                 src: '<%= jshint.gruntfile.src %>'
             },
             src: {
-                src: '<%= jshint.src.src %>'
+                src: '<%= yeoman.src %>/**/*.js'
             }
         },
         csslint: {
@@ -71,7 +71,7 @@ module.exports = function (grunt) {
             dist: {
                 options: {
                     profile: 'profiles/app.profile.js', // Profile fobuild
-                    appConfigFile: './src/app/config.json', // Optional: Config file for dojox/app
+                    appConfigFile: './<%= yeoman.app %>/config.json', // Optional: Config file for dojox/app
                     releaseDir: '<%= yeoman.tmp %>'
                 }
             },
