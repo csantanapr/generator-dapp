@@ -121,6 +121,13 @@ accepted, for the good of us all!)
 Change Log
 ---
 
+#### Version 0.1.9
+- Fix Cordova build should be optional
+- Added csslint
+- Added htmlhint
+- Added html validation
+- Added json lint
+
 #### Version 0.1.8
 - Replace cordova.sh with [grunt-cordovacli](https://npmjs.org/package/grunt-cordovacli) plugin
 
