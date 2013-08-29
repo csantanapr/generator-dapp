@@ -19,7 +19,6 @@ module.exports = function (grunt) {
         mountFolder = function (connect, dir) {
             return connect['static'](require('path').resolve(dir));
         };
-
     // Project configuration.
     grunt.initConfig({
         // Metadata.
@@ -78,7 +77,6 @@ module.exports = function (grunt) {
             src: {
                 files: '<%= yeoman.app %>/**',
                 tasks: ['lint']
-
             }
         },
         dojo: {
