@@ -1,4 +1,4 @@
-/*global alert, define*/
+/*global define*/
 
 /**
  * Bootstrap dApp Application
