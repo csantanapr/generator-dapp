@@ -1,3 +1,7 @@
+#### Version 0.2.2
+- fix grunt server task to skip copy dojox_application if already present in dojox/app
+
+
 #### Version 0.2.1
 - Skip copy dojox_application if already present in dojox/app
 - Added ability to print times for grunt

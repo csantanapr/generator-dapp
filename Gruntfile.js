@@ -264,7 +264,7 @@ module.exports = function (grunt) {
         }
 
         grunt.task.run([
-            'copy:web_dojox_app_hack',
+            'cpdxapp',
             'lint',
             'connect:livereload',
             'open:server',
