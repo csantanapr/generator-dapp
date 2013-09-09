@@ -3,7 +3,12 @@
 module.exports = function (grunt) {
     'use strict';
     // load all grunt tasks
-    require('matchdep').filterDev('grunt-*').forEach(grunt.loadNpmTasks);
+    //require('matchdep').filterDev('grunt-*').forEach(grunt.loadNpmTasks);
+
+    // show elapsed time at the end
+    require('time-grunt')(grunt);
+    // load all grunt tasks
+    require('load-grunt-tasks')(grunt);
 
     // configurable paths
     var yeomanConfig = {
@@ -281,7 +286,6 @@ module.exports = function (grunt) {
 
         if (grunt.file.exists(check)) {
             grunt.log.writeln(check + " exists, no copy necessary");
-            grunt.task.run(['copy:web_dojox_app_hack']);
         } else {
             grunt.log.writeln(check + " does not exists, doing copy ");
             grunt.task.run(['copy:web_dojox_app_hack']);
