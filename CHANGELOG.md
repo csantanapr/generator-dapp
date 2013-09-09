@@ -1,3 +1,7 @@
+#### Version 0.2.1
+- Skip copy dojox_application if already present in dojox/app
+- Added ability to print times for grunt
+
 #### Version 0.2.0
 - Replace complex App with more simple App Sample (old code is located in [dapp-examples](https://github.com/csantanapr/dapp-examples) )
 
