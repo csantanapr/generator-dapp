@@ -1,3 +1,7 @@
+#### Version 0.2.3
+- update grunt-cordovacli to 0.1.7
+- simplified bower.json
+
 #### Version 0.2.2
 - fix grunt server task to skip copy dojox_application if already present in dojox/app
 

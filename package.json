@@ -1,6 +1,6 @@
 {
   "name": "dapp-boilerplate",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Boilerplate for Single Page App using Dojo App Framework",
   "private": true,
   "main": "src/app/main.js",
@@ -49,7 +49,7 @@
     "connect-livereload": "~0.2.0",
     "grunt-dojo": "~0.2.4",
     "grunt-open": "~0.2.2",
-    "grunt-cordovacli": "~0.1.5",
+    "grunt-cordovacli": "~0.1.7",
     "time-grunt": "~0.1.1",
     "load-grunt-tasks": "~0.1.0"
   },
