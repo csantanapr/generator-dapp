@@ -169,6 +169,33 @@ module.exports = function (grunt) {
                     platforms: ['ios', 'android']          //valid platforms for command platform are ios, android, blackberry10, wp8, wp7
                 }
             },
+            /* remove to add plugins to cordova apps
+            plugins: {
+                options: {
+                    command: 'plugin',
+                    action: 'add',                  //valid actions for command plugin are add , remove, rm
+                    plugins: [                      //plugins are fetched from Apache Foundation Repo https://git-wip-us.apache.org/repos/asf/
+                        'battery-status',
+                        'camera',
+                        'console',
+                        'contacts',
+                        'device',
+                        'device-motion',
+                        'device-orientation',
+                        'dialogs',
+                        'file',
+                        'geolocation',
+                        'globalization',
+                        'inappbrowser',
+                        'media',
+                        'media-capture',
+                        'network-information',
+                        'splashscreen',
+                        'vibration'
+                    ]
+                }
+            },
+            */
             build: {
                 options: {
                     command: 'build',
@@ -252,9 +279,19 @@ module.exports = function (grunt) {
     //web dev tasks
     grunt.registerTask('web_build', ['lint', 'cpdxapp', 'dojo', 'copy:web_index', 'copy:web']);
     //main build tasks
-    grunt.registerTask('build', ['web_build']);
     grunt.registerTask('build_all', ['web_build', 'cordova']);
     grunt.registerTask('default', ['build']);
+    grunt.registerTask('build', function (target) {
+        if (target === 'all') {
+            grunt.task.run(['build_all']);
+        } else if (target === 'cordova') {
+            grunt.task.run(['cordova_build']);
+        } else {
+            grunt.task.run(['web_build']);
+        }
+
+
+    });
     //livereload server tasks server or server:dist
     grunt.registerTask('server', function (target) {
         if (target === 'dist') {
@@ -269,11 +306,13 @@ module.exports = function (grunt) {
             'watch'
         ]);
     });
+
     //Apache Cordova tasks
     grunt.registerTask('cordova_create', ['clean:cordova', 'cordovacli:create', 'cordovacli:platform']);
     grunt.registerTask('cordova_build', ['copy:cordova', 'cordovacli:build']);
     grunt.registerTask('cordova', ['cordova_create', 'cordova_build']);
     grunt.registerTask('cordova_emulate', ['cordova_build', 'cordovacli:emulate_ios', 'cordovacli:emulate_android']);
+    grunt.registerTask('demo', ['build_all', 'cordovacli:emulate_android']);
 
 
     //components/dojox_application needs to be present in components/dojox/app
