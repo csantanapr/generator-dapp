@@ -1,19 +1,10 @@
 {
   "name": "dapp-boilerplate",
-  "version": "0.1.7",
-  "main": "src/app/main.js",
   "dependencies": {
     "dojox": "dojo/dojox",
     "dojo" : "dojo/dojo",
     "dijit": "dojo/dijit",
     "util" : "dojo/util",
     "dojox_application": "dmachi/dojox_application"
-  },
-  "ignore": [
-    "**/.*",
-    "node_modules",
-    "components",
-    "test",
-    "tests"
-  ]
+  }
 }
