@@ -87,7 +87,7 @@ This boilerplate provides a very basic sample mobile App using using dojox.mobil
 
 For more advanced examples including integration with other JavaScript Libraries (jquery, backbone, angular, nodes, mongodb, handlebars, etc.. ) checkout this repo:
 
-## [dapp-examples](https://github.com/csantanapr/dapp-examples)
+See [dapp-examples](https://github.com/csantanapr/dapp-examples)
 
 ----
 
