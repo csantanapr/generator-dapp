@@ -73,14 +73,14 @@ See [Yeoman Dude Generator](http://github.com/csantanapr/generator-dude)
 ## A brief tour
 
 
-* The starting point of the boilerplate is the file at `src/index.html` and `src/app/main.js`
+* The starting point of the app is the file at `src/index.html` and `src/app/main.js`
   It's responsible for loading the Dojo loader and the application’s
   bootstrapper with `config.json`
 * The task `grunt build` takes your application files and builds them for
   production using the Dojo build tool.
   * It depends on the presence of the build profile at `profiles/app.profile.js` and App config `src/app/config.json`
 * The App creates an instance of `dojox/app/main` using the App Controller Configuration File  `src/app/config.json`
-* The provided directory structure for css, html, and js for your App is defined in config.json, you can change to a different convention
+* The provided directory structure for css, html, and js for your App is defined in config.json, you can change it
 
 # Examples
 This boilerplate provides a very basic sample mobile App using using dojox.mobile widgets
