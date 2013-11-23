@@ -1,0 +1,7 @@
+node_modules/
+test/temp/
+dist/
+npm-debug.log
+bower_components/
+validation-report.json
+validation-status.json
