@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <title>Dojox/App Boilerplate</title>
     <meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"/>
-    <link rel="stylesheet" href="../components/dojox/mobile/themes/custom/custom.css">
+    <link rel="stylesheet" href="../<%= bowerComponents %>/dojox/mobile/themes/custom/custom.css">
     <link rel="stylesheet" href="app/views/css/app.css">
 </head>
 <body>
@@ -19,14 +19,14 @@
     </script>
     <!-- Source/Development/not build/ -->
     <script type="text/javascript"
-            src="../components/dojo/dojo.js"
+            src="../<%= bowerComponents %>/dojo/dojo.js"
             data-dojo-config="async: true, isDebug: true,
             baseUrl: '../',
             paths: {
                 'app': 'src/app',
-                'dojo': 'components/dojo',
-                'dojox': 'components/dojox',
-                'dijit': 'components/dijit'
+                'dojo': '<%= bowerComponents %>/dojo',
+                'dojox': '<%= bowerComponents %>/dojox',
+                'dijit': '<%= bowerComponents %>/dijit'
             }">
     </script>
     <!-- Compile/Distribution/built

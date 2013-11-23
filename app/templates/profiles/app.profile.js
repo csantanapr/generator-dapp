@@ -67,9 +67,9 @@ var profile = {
         //'dojo',
         //'dijit',
         //'dojox',
-        { name: 'dojo', location: 'components/dojo'},
-        { name: 'dijit', location: 'components/dijit'},
-        { name: 'dojox', location: 'components/dojox'},
+        { name: 'dojo', location: '<%= bowerComponents %>/dojo'},
+        { name: 'dijit', location: '<%= bowerComponents %>/dijit'},
+        { name: 'dojox', location: '<%= bowerComponents %>/dojox'},
 
 
         // For reference, this is what a more verbose package declaration looks like.
