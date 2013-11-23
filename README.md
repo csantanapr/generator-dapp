@@ -48,10 +48,10 @@ Development (Use Grunt to preview, lint, build)
 ===
 Use grunt to run tasks, for more available tasks run `grunt --help`
 
-### Preview Source with watch and liverelaod
+### Preview Source with watch and livereload
     grunt server
 
-### Preview Distribution
+### Preview Distribution with watch and livereload
     grunt server:dist
 
 ### Lint

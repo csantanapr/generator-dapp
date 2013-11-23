@@ -9,7 +9,7 @@
         }
     },
     "dependencies": [
-        "app/views/controllers/CustomHistory",
+        "app/controllers/CustomHistory",
         "dojox/app/controllers/HistoryHash",
         /* On Mobile always add the following module */
         "dojox/mobile/common"
@@ -23,7 +23,7 @@
         //listens to "app-initLayout,app-layoutVIew,app-resize"
         "dojox/app/controllers/Layout"
     ],
-    "nls": "app/views/nls/app_strings",
+    "nls": "app/nls/app_strings",
     //Mandatory, one or a set of views view1+view2+view3
     "defaultView": "home",
     //Mandatory, Specify Application child views
@@ -43,7 +43,7 @@
     "has": {
         "html5history": {
             "controllers": [
-                "app/views/controllers/CustomHistory"
+                "app/controllers/CustomHistory"
             ]
         },
         "!html5history": {
