@@ -1,3 +1,7 @@
+#### Version 0.3.0
+- Replace with yeoman generator
+
+
 #### Version 0.2.3
 - update grunt-cordovacli to 0.1.7
 - simplified bower.json
