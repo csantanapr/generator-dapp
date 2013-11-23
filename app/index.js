@@ -32,7 +32,7 @@ DappGenerator.prototype.askFor = function askFor() {
     prompts = [{
         'name': 'appName',
         'message': 'What do you want to name your App?',
-        'default': 'dude'
+        'default': 'dapp'
     }];
 
     this.prompt(prompts, function (props) {
@@ -57,6 +57,6 @@ DappGenerator.prototype.projectfiles = function projectfiles() {
     this.template('_bower.json', 'bower.json');
     this.template('Gruntfile.js');
     this.copy('_.bowerrc', '.bowerrc');
-    this.copy('_.gitignore', '.gitignore');
+    this.template('_.gitignore', '.gitignore');
     this.template('_LICENSE', 'LICENSE');
 };

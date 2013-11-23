@@ -1,6 +1,6 @@
 dist
 node_modules
 npm-debug.log
-bower_components
+<%= bowerComponents %>
 validation-report.json
 validation-status.json
