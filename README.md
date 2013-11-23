@@ -34,8 +34,7 @@ Finally, initiate the generator:
 
 ```
 $ yo dapp
-``
-
+```
 
 - The Dapp Generator is a set of files to help you rapidly get up and running a SPA
 - Helps you build your SPA which some times consumes a lot of time when starting a new SPA
