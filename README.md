@@ -64,7 +64,7 @@ Believe me I cried a lot :-(
     grunt build
 
 ### Optional: Hybrid App (Apache Cordova/PhoneGap)
-See [Yeoman Dude Generator](http://github.com/csantana23/generator-dude)
+See [Yeoman Dude Generator](http://github.com/csantanapr/generator-dude)
 
 
 ----
