@@ -14,7 +14,6 @@ module.exports = function (grunt) {
             src: 'src',
             app: 'src/app',
             dist: 'dist',
-            www: 'dist/www',
             tmp: '.tmp',
             components: '<%= bowerComponents %>'
         },
@@ -112,14 +111,14 @@ module.exports = function (grunt) {
                 expand: true,
                 cwd: '<%%= yeoman.tmp %>',
                 src: [
-                    'app/views/css/app.css',
-                    'app/views/images/**',
+                    'app/css/app.css',
+                    'app/images/**',
                     'app/main.js',
                     'app/nls/main*.js',
                     'dojox/mobile/themes/custom/custom.css',
                     'dojo/dojo.js', 'build-report.txt'
                 ],
-                dest: '<%%= yeoman.www %>'
+                dest: '<%%= yeoman.dist %>'
             },
             web_index: {
                 files: [
@@ -128,11 +127,11 @@ module.exports = function (grunt) {
                         flatten: true,
                         cwd: 'src',
                         src: ['dist-index.html'],
-                        dest: '<%%= yeoman.www %>',
+                        dest: '<%%= yeoman.dist %>',
                         rename: function (dest) {
                           // use the source directory to create the file
                           // example with your directory structure
-                          //   dest = 'dist/www/'
+                          //   dest = 'dist/'
                           //   src = 'dist-index.html'
                             return dest + '/index.html';
                         }
@@ -184,7 +183,7 @@ module.exports = function (grunt) {
                     middleware: function (connect) {
                         return [
                             lrSnippet,
-                            mountFolder(connect, yeomanConfig.www)
+                            mountFolder(connect, yeomanConfig.dist)
                         ];
                     }
                 }

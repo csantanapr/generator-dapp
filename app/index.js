@@ -22,26 +22,6 @@ util.inherits(DappGenerator, yeoman.generators.Base);
 
 DappGenerator.prototype.askFor = function askFor() {
     'use strict';
-    var cb,
-        prompts;
-    cb = this.async();
-
-    // have Yeoman greet the user.
-    console.log(this.yeoman);
-
-    prompts = [{
-        'name': 'appName',
-        'message': 'What do you want to name your App?',
-        'default': 'dapp'
-    }];
-
-    this.prompt(prompts, function (props) {
-        // `props` is an object passed in containing the response values, named in
-        // accordance with the `name` property from your prompt object. So, for us:
-        this.appName = props.appName;
-
-        cb();
-    }.bind(this));
 };
 
 DappGenerator.prototype.app = function app() {
